@@ -1,0 +1,192 @@
+Program = Header Block*
+
+// General
+
+// All ???Number(X) are parsed as Number (with additional check for bitlength X)
+// However, when dumped, they are dumped as DecNumber, BinNumber or HexNumber as specified
+// The bitlength X is then used to determine the padding 0s.
+DecNumber = /0|[1-9][0-9_]*/
+BinNumber = /0b[01_]+/
+HexNumber = /0x[0-9A-Fa-f_]+/
+Number = DecNumber | BinNumber | HexNumber
+Bit = DecNumber(1)
+RawHexNumber = /[0-9A-Fa-f_]+/
+
+Side = 'N' | 'E' | 'S' | 'W'
+Direction = 'U' | 'R' | 'D' | 'L'
+Corner = 'NW' | 'NE' | 'SE' | 'SW'
+WireClass = 'L1' | 'L4' | 'L16'
+BigTileEdge =
+  'H' ('0' | '1' | '2' | '3' | '4')
+| ('W' | 'E') ('0' | '1' | '2' | '3')
+
+DirectionalWire = Side '[' Direction ']' '.' WireClass '[' DecNumber(3) ']'
+NonDirectionalWire = Side '.' WireClass '[' DecNumber(3) ']'
+BigDirectionalWire = BigTileEdge '[' Direction ']' '.' WireClass '[' DecNumber(3) ']'
+
+CellCoordinates = '(' DecNumber(?) ',' DecNumber(?) ')'
+
+// Header
+Header = Format Device
+Format = 'format' DecNumber(?) ';' // Currently 'format 1;'
+Device = 'device' DeviceName ';'
+DeviceName = /"\S{4}"/
+
+// Blocks
+// When dumping to text: global first, then all switch blocks,
+// then tile blocks in coordinate order (see "Textual format")
+Block =
+  Global
+| Switch
+| Logic
+| Bram
+| Dsp
+| Io
+
+// Global
+Global = 'global' '{' GlobalCommand* '}'
+
+GlobalCommand =
+  ClkPinEnable
+| RstPinEnable
+| ReservedGlobal
+
+ClkPinEnable = 'CLK_PIN_ENABLE' '[' DecNumber(3) ']' '=' Bit ';'
+RstPinEnable = 'RST_PIN_ENABLE' '[' DecNumber(2) ']' '=' Bit ';'
+ReservedGlobal = 'RESERVED' '=' BinNumber(4) ';'
+
+// Switch
+Switch = 'switch' CellCoordinates '{' SwitchCommand* '}'
+SwitchCommand = SwitchDst '=' SwitchSrc ';'
+
+SwitchDst = NonDirectionalWire
+SwitchSrc = NonDirectionalWire | SwitchTileOutput | UnknownSrc4
+
+SwitchTileOutput = Corner '.' SwitchOutputName
+SwitchOutputName =
+  'O1A' // 0, Logic
+| 'O1B' // 1, Logic
+| 'O2A' // 2, Logic
+| 'O2B' // 3, Logic
+| 'I' // 0..3, IO
+| 'DO' '[' Number(4) ']' // X % 4, BRAM
+| 'O' '[' Number(4) ']' // X % 4, DSP
+| 'ZERO' // inert corner: T[?] evaluates to 0 value
+
+UnknownSrc4 = 'code' DecNumber(4)
+UnknownSrc5 = 'code' DecNumber(5)
+
+// Logic
+Logic = 'logic' CellCoordinates '{' LogicCommand* '}'
+LogicCommand =
+  LogicConfig
+| LogicReg
+| LogicInputCommand
+
+LogicConfig =
+  'CARRY' '=' Bit ';'
+| 'MEM' '=' Bit ';'
+| 'MEM_DUAL' '=' Bit ';'
+| 'CIN_SRC' '=' ('0' | '1' | 'above' | 'A1') ';'
+| 'FRAC1' '=' Bit ';'
+| 'FRAC2' '=' Bit ';'
+| 'LUT1' '=' HexNumber(16) ';'
+| 'LUT2' '=' HexNumber(16) ';'
+
+LogicReg = 'reg' ('1' | '2') '{' LogicRegCommand* '}'
+LogicRegCommand =
+  'REG' '=' Bit ';'
+| 'CLK' '=' 'CLK' DecNumber(3) ';'
+| 'RST_EN' '=' Bit ';'
+| 'RST' '=' 'RST' DecNumber(2) ';'
+
+LogicInputCommand = 'in' LogicInput '=' LogicInputSrc ';'
+LogicInput = ('A' | 'B' | 'C' | 'D' | 'CE') ('1' | '2')
+LogicInputSrc =
+  Bit
+| 'O1A'
+| 'O1B'
+| 'O2A'
+| 'O2B'
+| DirectionalWire
+| UnknownSrc5
+
+// BRAM
+Bram = 'bram' CellCoordinates '{' BramCommand* '}'
+BramCommand =
+  BramConfig
+| BramInputCommand
+| BramData
+
+BramConfig =
+  'WIDTH' '=' DecNumber(3) ';'
+| 'CLK' '=' 'CLK' DecNumber(3) ';'
+
+BramInputCommand = 'in' BramInput '=' BramInputSrc ';'
+BramInput =
+  ('A1' | 'A2' | 'DI') '[' DecNumber(4) ']'
+| 'WE1'
+| 'WE2'
+
+BramInputSrc =
+  Bit
+| BigDirectionalWire
+| UnknownSrc4 // For A1, A2, DI
+| UnknownSrc5 // For WE1, WE2
+
+// ADDR_WIDTH and DATA_WIDTH are the address and data widths implied by the
+// WIDTH command of the enclosing bram block (see "Block RAM tile").
+// WIDTH must therefore appear before data {} within a block.
+BramData = 'data' '{' BramDataCommand+ '}'
+BramDataCommand = RawHexNumber(ADDR_WIDTH) ':' RawHexNumber(DATA_WIDTH)+ ';'
+
+// DSP
+
+Dsp = 'dsp' CellCoordinates '{' DspCommand* '}'
+DspCommand =
+  DspConfig
+| DspInputCommand
+
+DspConfig =
+  'SIGNED_A' '=' Bit ';'
+| 'SIGNED_B' '=' Bit ';'
+| 'ACC' '=' Bit ';'
+| 'CLK' '=' 'CLK' DecNumber(3) ';'
+| 'RST_EN' '=' Bit ';'
+| 'RST' '=' 'RST' DecNumber(2) ';'
+
+DspInputCommand = 'in' DspInput '=' DspInputSrc ';'
+DspInput =
+  ('A' | 'B') '[' DecNumber(3) ']'
+| 'C' '[' DecNumber(4) ']'
+| 'MD'
+| 'AD'
+| 'WE'
+
+DspInputSrc =
+  Bit
+| BigDirectionalWire
+| UnknownSrc5
+
+// IO
+
+Io = 'io' CellCoordinates '{' IoCommand* '}'
+IoCommand =
+  IoConfig
+| IoInputCommand
+
+IoConfig =
+  'REG_I' '=' Bit ';'
+| 'REG_O' '=' Bit ';'
+| 'PULLUP' '=' Bit ';'
+| 'PULLDOWN' '=' Bit ';'
+| 'CLK' '=' 'CLK' DecNumber(3) ';'
+| 'RST_EN' '=' Bit ';'
+| 'RST' '=' 'RST' DecNumber(2) ';'
+
+IoInputCommand = 'in' IoInput '=' IoInputSrc ';'
+IoInput = 'O' | 'E' | 'IE' | 'OE' | 'EE'
+IoInputSrc =
+  Bit
+| DirectionalWire
+| UnknownSrc5
