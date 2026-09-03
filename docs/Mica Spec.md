@@ -796,11 +796,11 @@ The two numbering schemes are related through the *phase* of the switchbox.
 For vertical (north/south) wires the phase is derived from `row`, for horizontal (east/west)
 wires from `col`; below, `n` stands for whichever of the two applies:
 
-| Switchbox index | Present when   | Edge track          |
+| Switchbox index | Present when   | Starting edge track |
 |-----------------|----------------|---------------------|
-| `L1[dir][i]`     | always         | `i`                 |
-| `L4[dir][u]`     | always         | `2 * (n mod 4) + u` |
-| `L16[dir][0]`    | `n ≡ 0 (mod 4)`| `(n / 4) mod 4`     |
+| `L1[dir][i]`    | always         | `i`                 |
+| `L4[dir][u]`    | always         | `2 * (n mod 4) + u` |
+| `L16[dir][0]`   | `n ≡ 0 (mod 4)`| `(n / 4) mod 4`     |
 
 with `/` being integer division. L1 segments start and end at every switchbox, so their track
 numbers need no adjustment. Every switchbox starts 2 of the 8 L4 wires, and one in four
