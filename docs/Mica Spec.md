@@ -890,21 +890,22 @@ For L4 outgoing wire, track `u = 0..1`:
 | Code     | Source                                            |
 |----------|---------------------------------------------------|
 | `0..3`   | `T[code].O[(u+s+code) mod 4]`                     |
-| `4..9`   | `L4[str][0..1]`, `L4[lft][0..1]`, `L4[rgt][0..1]` |
-| `10..12` | `L16[str][0]`, `L16[lft][0]`, `L16[rgt][0]`       |
-| `13`     | `L1[str][3u]`                                     |
-| `14`     | `L1[lft][3u+1]`                                   |
-| `15`     | `L1[rgt][3u+2]`                                   |
+| `4`      | `L1[str][3u]`                                     |
+| `5`      | `L1[lft][3u+1]`                                   |
+| `6`      | `L1[rgt][3u+2]`                                   |
+| `7..12`  | `L4[str][0..1]`, `L4[lft][0..1]`, `L4[rgt][0..1]` |
+| `13..15` | `L16[str][0]`, `L16[lft][0]`, `L16[rgt][0]`       |
 
 For L16 outgoing wire:
-| Code    | Source                                            |
-|---------|---------------------------------------------------|
-| `0..3`  | `T[code].O[(s+code) mod 4]`                       |
-| `4..6`  | `L16[str][0]`, `L16[lft][0]`, `L16[rgt][0]`       |
-| `7..12` | `L4[str][0..1]`, `L4[lft][0..1]`, `L4[rgt][0..1]` |
-| `13`    | `L1[str][4]`                                      |
-| `14`    | `L1[lft][5]`                                      |
-| `15`    | `L1[rgt][5]`                                      |
+| Code     | Source                                            |
+|----------|---------------------------------------------------|
+| `0..3`   | `T[code].O[(s+code) mod 4]`                       |
+| `4`      | `L1[str][4]`                                      |
+| `5`      | `L1[lft][5]`                                      |
+| `6`      | `L1[rgt][5]`                                      |
+| `7..12`  | `L4[str][0..1]`, `L4[lft][0..1]`, `L4[rgt][0..1]` |
+| `13..15` | `L16[str][0]`, `L16[lft][0]`, `L16[rgt][0]`       |
+
 L16 wires are present only in some switchboxes, but the corresponding 4 bits of configuration
 are kept for all switchboxes for simplicity.
 
@@ -1005,26 +1006,26 @@ Then, lastly, 32 possible codes for each input correspond to these possible sour
 | `0`      | constant 0                                 |     1 |
 | `1`      | constant 1                                 |     1 |
 | `2..5`   | local outputs `O1A`, `O1B`, `O2A`, `O2B`   |     4 |
-| `6..8`   | primary side, L1, CW                       |     3 |
-| `9..11`  | primary side, L1, CCW                      |     3 |
-| `12..15` | primary side, L4, CW                       |     4 |
-| `16..19` | primary side, L4, CCW                      |     4 |
-| `20..21` | primary side, L16, CW                      |     2 |
-| `22..23` | primary side, L16, CCW                     |     2 |
+| `6..14`  | primary side, CW, `W(n=9,d=0)`             |     9 |
+| `15..23` | primary side, CCW, `W(n=9,d=0)`            |     9 |
 | `24..31` | secondary side and direction, `W(n=8,d=1)` |     8 |
 |          |                                            |    32 |
 
 For CE1 (even parity) and CE2 (odd parity) signals, the codes are different:
-| Code     | Source                                     | Count |
-|----------|--------------------------------------------|------:|
-| `0`      | constant 0                                 |     1 |
-| `1`      | constant 1                                 |     1 |
-| `2..3`   | local outputs `O1B`, `O2B`                 |     2 |
-| `4..10`  | N side, CW `W(n=4,d=4)` + CCW `W(n=3,d=6)` |     7 |
-| `11..17` | E side, CW `W(n=4,d=4)` + CCW `W(n=3,d=6)` |     7 |
-| `18..24` | S side, CW `W(n=4,d=4)` + CCW `W(n=3,d=6)` |     7 |
-| `25..31` | W side, CW `W(n=4,d=4)` + CCW `W(n=3,d=6)` |     7 |
-|          |                                            |    32 |
+| Code     | Source                     | Count |
+|----------|----------------------------|------:|
+| `0`      | constant 0                 |     1 |
+| `1`      | constant 1                 |     1 |
+| `2..3`   | local outputs `O1B`, `O2B` |     2 |
+| `4..7`   | N side, CW `W(n=4,d=4)`    |     4 |
+| `8..11`  | E side, CW `W(n=4,d=4)`    |     4 |
+| `12..15` | S side, CW `W(n=4,d=4)`    |     4 |
+| `16..19` | W side, CW `W(n=4,d=4)`    |     4 |
+| `20..22` | N side, CCW `W(n=3,d=6)`   |     3 |
+| `23..25` | E side, CCW `W(n=3,d=6)`   |     3 |
+| `26..28` | S side, CCW `W(n=3,d=6)`   |     3 |
+| `29..31` | W side, CCW `W(n=3,d=6)`   |     3 |
+|          |                            |    32 |
 
 Note how local outputs of the logic tile are also accessible without any wiring.
 In total, there are 10x5 = 50 bits of input configuration per logic tiles.
@@ -1038,10 +1039,10 @@ For the 10 outer edges, split 36 wires into 4 "slots".
 Parity is defined the same way as in the previous section.
 | Slot | Parity | Primary/Secondary direction |           Wires         |
 |------|--------|-----------------------------|------------------------:|
-| 0    | even   | CW/east                     | 3xL1 + 4xL4 + 2xL16 = 9 |
-| 1    | even   | CCW/west                    |                       9 |
-| 2    | odd    | CW/east                     |                       9 |
-| 3    | odd    | CCW/west                    |                       9 |
+| 0    | even   | CW/west                     | 3xL1 + 4xL4 + 2xL16 = 9 |
+| 1    | even   | CCW/east                    |                       9 |
+| 2    | odd    | CW/west                     |                       9 |
+| 3    | odd    | CCW/east                    |                       9 |
 
 To all the outer edges, we assign 4 input bits each, in the following way:
 | Edge | Secondary edge | `d` |  Slot 0  |  Slot 1  |  Slot 2  |  Slot 3  |
@@ -1065,19 +1066,18 @@ edges sharing an internal edge, so all of them remain simultaneously satisfiable
 
 Internal edges are used for the secondary wires because `H1`, `H2` and `H3` are *private* to the
 BRAM tile, while `H0` and `H4` are shared with the tiles above and below it. Spreading the
-secondary load onto the internal edges keeps this contention inside the tile. The DSP needs two
-secondary edges per input rather than one, so it cannot stay inside and does reach onto `H0`/`H4`.
+secondary load onto the internal edges keeps this contention inside the tile. The DSP gives each of
+its primary edges two secondary ones rather than one, so it cannot stay inside and does reach onto
+`H0`/`H4`.
 
 Each of the address/data inputs have 4 bits of configuration, up to 16 sources:
-| Code     | Source                                                          | Count |
-|----------|-----------------------------------------------------------------|------:|
-| `0`      | constant 0                                                      |     1 |
-| `1`      | constant 1                                                      |     1 |
-| `2..4`   | primary edge, L1, own parity + direction                        |     3 |
-| `5..8`   | primary edge, L4, own parity + direction                        |     4 |
-| `9..10`  | primary edge, L16, own parity + direction                       |     2 |
-| `11..15` | secondary edge, opposite parity, `W(n=5,d)`                     |     5 |
-|          |                                                                 |    16 |
+| Code     | Source                                             | Count |
+|----------|----------------------------------------------------|------:|
+| `0`      | constant 0                                         |     1 |
+| `1`      | constant 1                                         |     1 |
+| `2..10`  | primary edge, own parity + direction, `W(n=9,d=0)` |     9 |
+| `11..15` | secondary edge, opposite parity, `W(n=5,d)`        |     5 |
+|          |                                                    |    16 |
 
 Write enable inputs are different, mostly occupying internal edges `H1,H2,H3`.
 `WE1` occupies even parity wires, `WE2` - odd parity. Both get 5 bits each.
@@ -1101,49 +1101,37 @@ In total, BRAM routing requires 40x4 + 2x5 = 170 bits of configuration
 Similar to BRAM, but all inputs are "rigid", so get 5 bit multiplexers:
 This means for best access we can get *both* directions on the primary edge, 18 wires.
 
-| Kind | Parity | Secondary edge |           Wires              |
-|------|--------|----------------|-----------------------------:|
-|    0 | even   |              1 | 2x(3xL1 + 4xL4 + 2xL16) = 18 |
-|    1 | even   |              2 |                           18 |
-|    2 | odd    |              1 |                           18 |
-|    3 | odd    |              2 |                           18 |
+ Parity |           Wires              |
+--------|-----------------------------:|
+ even   | 2x(3xL1 + 4xL4 + 2xL16) = 18 |
+ odd    |                           18 |
 
-| Edge | Kind 0  | Kind 1  | Kind 2  | Kind 3  |
-|------|---------|---------|---------|---------|
-| `W0` | `A[0]`  | `C[0]`  | `B[0]`  | `C[1]`  |
-| `E0` | `C[2]`  | `B[1]`  | `C[3]`  | `A[1]`  |
-| `W1` | `B[2]`  | `C[4]`  | `A[2]`  | `C[5]`  |
-| `E1` | `C[6]`  | `A[3]`  | `C[7]`  | `B[3]`  |
-| `W2` | `A[4]`  | `C[8]`  | `B[4]`  | `C[9]`  |
-| `E2` | `C[10]` | `B[5]`  | `C[11]` | `A[5]`  |
-| `W3` | `B[6]`  | `C[12]` | `A[6]`  | `C[13]` |
-| `E3` | `C[14]` | `A[7]`  | `C[15]` | `B[7]`  |
-
-For these edges, we define *two* secondary ones, with separate `d` values:
-
-| Primary edge | Secondary edge 1 | `d1` | Secondary edge 2 | `d2` |
-|--------------|------------------|------|------------------|------|
-| `W0`         | `H0`             |    0 | `H1`             |    0 |
-| `E0`         | `H0`             |    4 | `H1`             |    2 |
-| `W1`         | `H1`             |    4 | `H2`             |    0 |
-| `E1`         | `H1`             |    6 | `H2`             |    2 |
-| `W2`         | `H2`             |    4 | `H3`             |    0 |
-| `E2`         | `H2`             |    6 | `H3`             |    2 |
-| `W3`         | `H3`             |    4 | `H4`             |    0 |
-| `E3`         | `H3`             |    6 | `H4`             |    4 |
-
+| Edge | Secondary edge | `d` | Even    | Odd     |
+|------|----------------|-----|---------|---------|
+| `W0` |           `H0` |   0 | `A[0]`  | `B[0]`  |
+| `W0` |           `H1` |   0 | `C[0]`  | `C[1]`  |
+| `E0` |           `H0` |   4 | `C[2]`  | `C[3]`  |
+| `E0` |           `H1` |   2 | `B[1]`  | `A[1]`  |
+| `W1` |           `H1` |   4 | `B[2]`  | `A[2]`  |
+| `W1` |           `H2` |   0 | `C[4]`  | `C[5]`  |
+| `E1` |           `H1` |   6 | `C[6]`  | `C[7]`  |
+| `E1` |           `H2` |   2 | `A[3]`  | `B[3]`  |
+| `W2` |           `H2` |   4 | `A[4]`  | `B[4]`  |
+| `W2` |           `H3` |   0 | `C[8]`  | `C[9]`  |
+| `E2` |           `H2` |   6 | `C[10]` | `C[11]` |
+| `E2` |           `H3` |   2 | `B[5]`  | `A[5]`  |
+| `W3` |           `H3` |   4 | `B[6]`  | `A[6]`  |
+| `W3` |           `H4` |   0 | `C[12]` | `C[13]` |
+| `E3` |           `H3` |   6 | `C[14]` | `C[15]` |
+| `E3` |           `H4` |   4 | `A[7]`  | `B[7]`  |
 
 For A,B,C inputs:
 | Code     | Source                                            | Count |
 |----------|---------------------------------------------------|------:|
 | `0`      | constant 0                                        |     1 |
 | `1`      | constant 1                                        |     1 |
-| `2..4`   | primary edge, L1, own parity, CW                  |     3 |
-| `5..7`   | primary edge, L1, own parity, CCW                 |     3 |
-| `8..11`  | primary edge, L4, own parity, CW                  |     4 |
-| `12..15` | primary edge, L4, own parity, CCW                 |     4 |
-| `16..17` | primary edge, L16, own parity, CW                 |     2 |
-| `18..19` | primary edge, L16, own parity, CCW                |     2 |
+| `2..10`  | primary edge, own parity, CW, `W(n=9,d=0)`        |     9 |
+| `11..19` | primary edge, own parity, CCW, `W(n=9,d=0)`       |     9 |
 | `20..25` | secondary edge, opposite parity, west, `W(n=6,d)` |     6 |
 | `26..31` | secondary edge, opposite parity, east, `W(n=6,d)` |     6 |
 |          |                                                   |    32 |
@@ -1180,12 +1168,8 @@ Each IO tile is only adjacent to one edge, so all of the inputs are sourced from
 |----------|----------------------------------|------:|
 | `0`      | constant 0                       |     1 |
 | `1`      | constant 1                       |     1 |
-| `2..4`   | L1, own parity, CW               |     3 |
-| `5..7`   | L1, own parity, CCW              |     3 |
-| `8..11`  | L4, own parity, CW               |     4 |
-| `12..15` | L4, own parity, CCW              |     4 |
-| `16..17` | L16, own parity, CW              |     2 |
-| `18..19` | L16, own parity, CCW             |     2 |
+| `2..10`  | own parity, CW, `W(n=9,d=0)`     |     9 |
+| `11..19` | own parity, CCW, `W(n=9,d=0)`    |     9 |
 | `20..25` | opposite parity, CW, `W(n=6,d)`  |     6 |
 | `26..31` | opposite parity, CCW, `W(n=6,d)` |     6 |
 |          |                                  |    32 |

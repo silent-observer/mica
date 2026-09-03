@@ -10,7 +10,8 @@ pub fn main(init: std.process.Init) !void {
         std.log.info("arg: {s}", .{arg});
     }
 
-    const f = core.Fabric.build(init.arena.allocator(), .mica1s);
+    var f = core.Fabric.build(init.gpa, .mica1s);
+    defer f.deinit();
 
     var buf: [16 * 1024]u8 = undefined;
 

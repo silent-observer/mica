@@ -95,6 +95,7 @@ pub const Side = enum(u2) {
         };
     }
 
+    pub const opposite = straight;
     pub fn straight(s: Side) Side {
         return @enumFromInt(s.int() +% 2);
     }
@@ -451,6 +452,27 @@ pub const BramInput = union(enum) {
         };
     }
 
+    pub fn fromIdx(i: u8) BramInput {
+        return switch (i) {
+            0...11 => .{ .a1 = @intCast(i) },
+            12...23 => .{ .a2 = @intCast(i - 12) },
+            24...39 => .{ .di = @intCast(i - 24) },
+            40 => .we1,
+            41 => .we2,
+            else => @panic("BramInput index out of range!"),
+        };
+    }
+
+    pub fn A1(x: u4) BramInput {
+        return .{ .a1 = x };
+    }
+    pub fn A2(x: u4) BramInput {
+        return .{ .a2 = x };
+    }
+    pub fn DI(x: u4) BramInput {
+        return .{ .di = x };
+    }
+
     pub const TOTAL = 12 + 12 + 16 + 2;
 };
 
@@ -471,6 +493,28 @@ pub const DspInput = union(enum) {
             .ad => 33,
             .we => 34,
         };
+    }
+
+    pub fn fromIdx(i: u8) DspInput {
+        return switch (i) {
+            0...7 => .{ .a = @intCast(i) },
+            8...15 => .{ .b = @intCast(i - 8) },
+            16...31 => .{ .c = @intCast(i - 16) },
+            32 => .md,
+            33 => .ad,
+            34 => .we,
+            else => @panic("DspInput index out of range!"),
+        };
+    }
+
+    pub fn A(x: u3) DspInput {
+        return .{ .a = x };
+    }
+    pub fn B(x: u3) DspInput {
+        return .{ .b = x };
+    }
+    pub fn C(x: u4) DspInput {
+        return .{ .c = x };
     }
 
     pub const TOTAL = 8 + 8 + 16 + 3;
