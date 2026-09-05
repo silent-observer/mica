@@ -6,7 +6,7 @@ const core = @import("core");
 pub fn main(init: std.process.Init) !void {
     const text = try std.Io.Dir.cwd().readFileAlloc(
         init.io,
-        "examples/inverter.mica",
+        "examples/toggle.mica",
         init.gpa,
         .unlimited,
     );
@@ -25,6 +25,15 @@ pub fn main(init: std.process.Init) !void {
     defer init.gpa.free(emitted);
 
     std.debug.print("{s}", .{emitted});
+
+    const emitted_bin = core.BinaryEmitter.emit(&r.c.?, init.gpa);
+    defer init.gpa.free(emitted_bin);
+
+    try std.Io.Dir.cwd().writeFile(init.io, .{
+        .data = emitted_bin,
+        .sub_path = "examples/toggle.bit",
+        .flags = .{},
+    });
 
     // var f = core.Fabric.build(init.gpa, .mica1s);
     // defer f.deinit();

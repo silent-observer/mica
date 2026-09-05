@@ -1289,14 +1289,16 @@ CARRY: bit
 MEM: bit
 MEM_DUAL: bit
 CIN_SRC: [2]bit
+FRAC1: bit
+FRAC2: bit
+LUT1: [16]bit
+LUT2: [16]bit
 
-for lut in [1, 2]:
+for reg in [1, 2]:
     REG: bit
-    FRAC: bit
     CLK: [3]bit
     RST_EN: bit
     RST: [2]bit
-    LUT: [16]bit
 
 // Inputs
 for lut in [1, 2]:
@@ -1304,7 +1306,7 @@ for lut in [1, 2]:
         INPUT_CODE: [5]bit
 ```
 
-Total: 5 + 2x24 + 2x5x5 = 103 bits
+Total: 39 + 2x7 + 2x5x5 = 103 bits
 
 ### Block RAM tile configuration
 ```
