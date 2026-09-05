@@ -2276,7 +2276,7 @@ logic (27,37) {
 }
 
 bram (25,38) {
-    WIDTH = 3;
+    WIDTH = 8;
     in A1[0] = H1[R].L1[1];
     in A1[1] = H1[R].L1[2];
     in A1[2] = H1[R].L1[3];

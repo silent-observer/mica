@@ -6,6 +6,7 @@ pub const DeviceModel = @This();
 model_id: []const u8,
 grid: common.GridSize,
 column_types: []const common.TileType,
+column_indexes: []const u32,
 switch_count: u32,
 tile_counts: std.EnumArray(common.TileType, u32),
 
@@ -28,6 +29,12 @@ pub const mica1l = DeviceModel.build(
     "I 9L B 9L D 9L B 9L D 9L B 9L B 9L D 9L B 16L B 9L D 9L B 9L B 9L D 9L B 9L D 9L B 9L I",
 );
 
+pub const models = [3]DeviceModel{
+    mica1s,
+    mica1m,
+    mica1l,
+};
+
 fn build(
     comptime model_id: []const u8,
     comptime grid_rows: u32,
@@ -38,6 +45,8 @@ fn build(
     @setEvalBranchQuota(100 * grid_cols);
 
     var columns: [grid_cols]common.TileType = undefined;
+    var column_indexes: [grid_cols]u32 = undefined;
+    var column_counts: std.EnumArray(common.TileType, u32) = .initFill(0);
     var tile_counts: std.EnumArray(common.TileType, u32) = .initFill(0);
 
     {
@@ -55,23 +64,26 @@ fn build(
 
             for (0..num) |_| {
                 columns[i] = t;
+                column_indexes[i] = column_counts.get(t);
                 i += 1;
+                column_counts.getPtr(t).* += 1;
             }
 
             const new_tiles = switch (t) {
                 .logic => (grid_rows - 2) * num,
                 .bram, .dsp => (grid_rows - 2) * num / common.BIG_TILE_HEIGHT,
-                .io, .none => 0,
+                .io, .inert => 0,
             };
 
             tile_counts.getPtr(t).* += new_tiles;
         }
     }
 
-    tile_counts.getPtr(.none).* += 4;
+    tile_counts.getPtr(.inert).* += 4;
     tile_counts.getPtr(.io).* += (grid_rows - 2) * 2 + (grid_cols - 2) * 2;
 
     const final_column_types = columns;
+    const final_column_indexes = column_indexes;
 
     return DeviceModel{
         .model_id = model_id,
@@ -81,6 +93,7 @@ fn build(
         },
         .switch_count = (grid_rows - 1) * (grid_cols - 1),
         .column_types = &final_column_types,
+        .column_indexes = &final_column_indexes,
         .tile_counts = tile_counts,
     };
 }
@@ -113,6 +126,30 @@ pub fn pinCoord(m: *const DeviceModel, pin: usize) common.TileCoords {
         }
     else
         @panic("Invalid pin number!");
+}
+
+pub fn tileType(m: *const DeviceModel, tile: common.TileCoords) common.TileType {
+    return switch (m.column_types[tile.col]) {
+        .inert => unreachable,
+        .io => if (tile.row == 0 or tile.row == m.grid.rows - 1) .inert else .io,
+        .logic, .bram, .dsp => if (tile.row == 0 or tile.row == m.grid.rows - 1)
+            .io
+        else
+            m.column_types[tile.col],
+    };
+}
+
+pub fn ioWireSide(m: *const DeviceModel, tile: common.TileCoords) common.Side {
+    return if (tile.row == m.grid.northIo())
+        .s
+    else if (tile.row == m.grid.southIo())
+        .n
+    else if (tile.col == m.grid.westIo())
+        .e
+    else if (tile.col == m.grid.eastIo())
+        .w
+    else
+        unreachable;
 }
 
 test "pinCoord" {

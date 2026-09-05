@@ -60,7 +60,7 @@ Switch = 'switch' CellCoordinates '{' SwitchCommand* '}'
 SwitchCommand = SwitchDst '=' SwitchSrc ';'
 
 SwitchDst = NonDirectionalWire
-SwitchSrc = NonDirectionalWire | SwitchTileOutput | UnknownSrc4
+SwitchSrc = NonDirectionalWire | SwitchTileOutput
 
 SwitchTileOutput = Corner '.' SwitchOutputName
 SwitchOutputName =
@@ -119,8 +119,10 @@ BramCommand =
 | BramData
 
 BramConfig =
-  'WIDTH' '=' DecNumber(3) ';'
+  'WIDTH' '=' BramWidth ';'
 | 'CLK' '=' 'CLK' DecNumber(3) ';'
+
+BramWidth = 1 | 2 | 4 | 8 | 16
 
 BramInputCommand = 'in' BramInput '=' BramInputSrc ';'
 BramInput =

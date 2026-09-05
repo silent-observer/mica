@@ -1,7 +1,7 @@
 const std = @import("std");
 
 pub const TileType = enum {
-    none,
+    inert,
     logic,
     bram,
     dsp,
@@ -107,6 +107,18 @@ pub const Side = enum(u2) {
     pub fn left(s: Side) Side {
         return @enumFromInt(s.int() +% 3);
     }
+
+    pub fn format(
+        self: @This(),
+        writer: *std.Io.Writer,
+    ) std.Io.Writer.Error!void {
+        switch (self) {
+            .n => try writer.writeAll("N"),
+            .e => try writer.writeAll("E"),
+            .s => try writer.writeAll("S"),
+            .w => try writer.writeAll("W"),
+        }
+    }
 };
 
 pub const Corner = enum(u2) {
@@ -117,6 +129,18 @@ pub const Corner = enum(u2) {
 
     pub fn int(s: Corner) u2 {
         return @intFromEnum(s);
+    }
+
+    pub fn format(
+        self: @This(),
+        writer: *std.Io.Writer,
+    ) std.Io.Writer.Error!void {
+        switch (self) {
+            .nw => try writer.writeAll("NW"),
+            .ne => try writer.writeAll("NE"),
+            .se => try writer.writeAll("SE"),
+            .sw => try writer.writeAll("SW"),
+        }
     }
 };
 
@@ -144,6 +168,18 @@ pub const Direction = enum(u2) {
             .down => .s,
             .left => .w,
         };
+    }
+
+    pub fn format(
+        self: @This(),
+        writer: *std.Io.Writer,
+    ) std.Io.Writer.Error!void {
+        switch (self) {
+            .up => try writer.writeAll("U"),
+            .right => try writer.writeAll("R"),
+            .down => try writer.writeAll("D"),
+            .left => try writer.writeAll("L"),
+        }
     }
 };
 
@@ -258,6 +294,17 @@ pub const WireClass = enum {
             .l4 => 4,
             .l16 => 16,
         };
+    }
+
+    pub fn format(
+        self: @This(),
+        writer: *std.Io.Writer,
+    ) std.Io.Writer.Error!void {
+        switch (self) {
+            .l1 => try writer.writeAll("L1"),
+            .l4 => try writer.writeAll("L4"),
+            .l16 => try writer.writeAll("L16"),
+        }
     }
 };
 
@@ -414,6 +461,19 @@ pub const IoInput = enum(u8) {
     }
 
     pub const TOTAL = 5;
+
+    pub fn format(
+        self: @This(),
+        writer: *std.Io.Writer,
+    ) std.Io.Writer.Error!void {
+        switch (self) {
+            .o => try writer.writeAll("O"),
+            .e => try writer.writeAll("E"),
+            .ie => try writer.writeAll("IE"),
+            .oe => try writer.writeAll("OE"),
+            .ee => try writer.writeAll("EE"),
+        }
+    }
 };
 
 pub const LogicInput = enum(u8) {
@@ -433,6 +493,24 @@ pub const LogicInput = enum(u8) {
     }
 
     pub const TOTAL = 10;
+
+    pub fn format(
+        self: @This(),
+        writer: *std.Io.Writer,
+    ) std.Io.Writer.Error!void {
+        switch (self) {
+            .a1 => try writer.writeAll("A1"),
+            .b1 => try writer.writeAll("B1"),
+            .c1 => try writer.writeAll("C1"),
+            .d1 => try writer.writeAll("D1"),
+            .ce1 => try writer.writeAll("CE1"),
+            .a2 => try writer.writeAll("A2"),
+            .b2 => try writer.writeAll("B2"),
+            .c2 => try writer.writeAll("C2"),
+            .d2 => try writer.writeAll("D2"),
+            .ce2 => try writer.writeAll("CE2"),
+        }
+    }
 };
 
 pub const BramInput = union(enum) {
@@ -474,6 +552,19 @@ pub const BramInput = union(enum) {
     }
 
     pub const TOTAL = 12 + 12 + 16 + 2;
+
+    pub fn format(
+        self: @This(),
+        writer: *std.Io.Writer,
+    ) std.Io.Writer.Error!void {
+        switch (self) {
+            .a1 => |x| try writer.print("A1[{}]", .{x}),
+            .a2 => |x| try writer.print("A2[{}]", .{x}),
+            .di => |x| try writer.print("DI[{}]", .{x}),
+            .we1 => try writer.writeAll("WE1"),
+            .we2 => try writer.writeAll("WE2"),
+        }
+    }
 };
 
 pub const DspInput = union(enum) {
@@ -518,6 +609,20 @@ pub const DspInput = union(enum) {
     }
 
     pub const TOTAL = 8 + 8 + 16 + 3;
+
+    pub fn format(
+        self: @This(),
+        writer: *std.Io.Writer,
+    ) std.Io.Writer.Error!void {
+        switch (self) {
+            .a => |x| try writer.print("A[{}]", .{x}),
+            .b => |x| try writer.print("B[{}]", .{x}),
+            .c => |x| try writer.print("C[{}]", .{x}),
+            .md => try writer.writeAll("MD"),
+            .ad => try writer.writeAll("AD"),
+            .we => try writer.writeAll("WE"),
+        }
+    }
 };
 
 pub const BIG_TILE_HEIGHT = 4;
@@ -545,6 +650,36 @@ pub const BigEdge = enum {
             .h4 => .s,
             .h1, .h2, .h3 => null,
         };
+    }
+
+    pub fn orientation(be: BigEdge) Orientation {
+        return switch (be) {
+            .h0, .h1, .h2, .h3, .h4 => .horizontal,
+            .w0, .w1, .w2, .w3, .e0, .e1, .e2, .e3 => .vertical,
+        };
+    }
+
+    pub fn format(
+        self: @This(),
+        writer: *std.Io.Writer,
+    ) std.Io.Writer.Error!void {
+        switch (self) {
+            .h0 => try writer.writeAll("H0"),
+            .h1 => try writer.writeAll("H1"),
+            .h2 => try writer.writeAll("H2"),
+            .h3 => try writer.writeAll("H3"),
+            .h4 => try writer.writeAll("H4"),
+
+            .w0 => try writer.writeAll("W0"),
+            .w1 => try writer.writeAll("W1"),
+            .w2 => try writer.writeAll("W2"),
+            .w3 => try writer.writeAll("W3"),
+
+            .e0 => try writer.writeAll("E0"),
+            .e1 => try writer.writeAll("E1"),
+            .e2 => try writer.writeAll("E2"),
+            .e3 => try writer.writeAll("E3"),
+        }
     }
 };
 

@@ -1,0 +1,186 @@
+const std = @import("std");
+const common = @import("common.zig");
+const DeviceModel = @import("DeviceModel.zig");
+
+pub const Configuration = @This();
+
+model: DeviceModel,
+global: Global,
+switches: []Switch,
+logic: []Logic,
+bram: []Bram,
+bram_data: []Bram.Data,
+dsp: []Dsp,
+io: []Io,
+
+pub const Global = struct {
+    clk_enable: [8]bool,
+    rst_enable: [4]bool,
+    reserved: u4,
+};
+
+pub const Logic = struct {
+    carry: bool,
+    mem: bool,
+    mem_dual: bool,
+    cin_src: CinSource,
+    frac1: bool,
+    frac2: bool,
+    lut1: u16,
+    lut2: u16,
+    regs: [2]Reg,
+
+    inputs: std.EnumArray(common.LogicInput, u5),
+
+    pub const CinSource = enum(u2) {
+        zero,
+        one,
+        input,
+        above,
+    };
+
+    pub const Reg = struct {
+        reg: bool,
+        clk: u3,
+        rst_en: bool,
+        rst: u2,
+    };
+};
+
+pub const Bram = struct {
+    width: u3,
+    clk: u3,
+
+    a1: [12]u4,
+    a2: [12]u4,
+    di: [16]u4,
+    we1: u5,
+    we2: u5,
+
+    pub const Data = struct {
+        data: [512]u8,
+    };
+};
+
+pub const Dsp = struct {
+    signed_a: bool,
+    signed_b: bool,
+    acc: bool,
+    clk: u3,
+    rst_en: bool,
+    rst: u2,
+
+    a: [8]u5,
+    b: [8]u5,
+    c: [16]u5,
+    md: u5,
+    ad: u5,
+    we: u5,
+};
+
+pub const Io = struct {
+    reg_i: bool,
+    reg_o: bool,
+    pullup: bool,
+    pulldown: bool,
+    clk: u3,
+    rst_en: bool,
+    rst: u2,
+
+    inputs: std.EnumArray(common.IoInput, u5),
+};
+
+pub const Switch = struct {
+    sides: std.EnumArray(common.Side, PerSide),
+
+    pub const PerSide = struct {
+        l1: [6]u4,
+        l4: [2]u4,
+        l16: u4,
+    };
+};
+
+pub fn init(model: DeviceModel, alloc: std.mem.Allocator) Configuration {
+    const switches = alloc.alloc(Switch, model.switch_count) catch common.oom();
+    const logic = alloc.alloc(Logic, model.tile_counts.get(.logic)) catch common.oom();
+    const bram = alloc.alloc(Bram, model.tile_counts.get(.bram)) catch common.oom();
+    const bram_data = alloc.alloc(Bram.Data, model.tile_counts.get(.bram)) catch common.oom();
+    const dsp = alloc.alloc(Dsp, model.tile_counts.get(.dsp)) catch common.oom();
+    const io = alloc.alloc(Io, model.tile_counts.get(.io)) catch common.oom();
+
+    @memset(switches, std.mem.zeroes(Switch));
+    @memset(logic, std.mem.zeroes(Logic));
+    @memset(bram, std.mem.zeroes(Bram));
+    @memset(bram_data, std.mem.zeroes(Bram.Data));
+    @memset(dsp, std.mem.zeroes(Dsp));
+    @memset(io, std.mem.zeroes(Io));
+
+    return Configuration{
+        .model = model,
+        .global = std.mem.zeroes(Global),
+        .switches = switches,
+        .logic = logic,
+        .bram = bram,
+        .bram_data = bram_data,
+        .dsp = dsp,
+        .io = io,
+    };
+}
+
+pub fn deinit(c: Configuration, alloc: std.mem.Allocator) void {
+    alloc.free(c.switches);
+    alloc.free(c.logic);
+    alloc.free(c.bram);
+    alloc.free(c.bram_data);
+    alloc.free(c.dsp);
+    alloc.free(c.io);
+}
+
+pub fn getSwitch(c: *const Configuration, sw: common.SwitchCoords) *Switch {
+    const idx = sw.row + sw.col * c.model.grid.vertexRows();
+    return &c.switches[idx];
+}
+
+pub fn getLogic(c: *const Configuration, tile: common.TileCoords) *Logic {
+    const row = tile.row - 1;
+    const col = c.model.column_indexes[tile.col];
+    const idx = row + col * c.model.grid.tileRows();
+    return &c.logic[idx];
+}
+
+pub fn getBram(c: *const Configuration, tile: common.TileCoords) *Bram {
+    const row = (tile.row - 1) / 4;
+    const col = c.model.column_indexes[tile.col];
+    const idx = row + col * c.model.grid.tileRows() / 4;
+    return &c.bram[idx];
+}
+
+pub fn getBramData(c: *const Configuration, tile: common.TileCoords) *Bram.Data {
+    const row = (tile.row - 1) / 4;
+    const col = c.model.column_indexes[tile.col];
+    const idx = row + col * c.model.grid.tileRows() / 4;
+    return &c.bram_data[idx];
+}
+
+pub fn getDsp(c: *const Configuration, tile: common.TileCoords) *Dsp {
+    const row = (tile.row - 1) / 4;
+    const col = c.model.column_indexes[tile.col];
+    const idx = row + col * c.model.grid.tileRows() / 4;
+    return &c.dsp[idx];
+}
+
+pub fn getIo(c: *const Configuration, tile: common.TileCoords) *Io {
+    const idx =
+        if (tile.col == c.model.grid.westIo())
+            tile.row - 1
+        else if (tile.row == c.model.grid.northIo())
+            c.model.grid.tileRows() + (tile.col - 1) * 2
+        else if (tile.row == c.model.grid.southIo())
+            c.model.grid.tileRows() + (tile.col - 1) * 2 + 1
+        else if (tile.row == c.model.grid.eastIo())
+            c.model.grid.tileRows() + 2 * c.model.grid.tileCols() + (tile.row - 1)
+        else
+            unreachable;
+
+    return &c.io[idx];
+}

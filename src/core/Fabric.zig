@@ -381,7 +381,7 @@ fn generateSinks(f: *Fabric, model: DeviceModel) void {
                 .col = @intCast(col),
             };
             switch (t) {
-                .none, .io => {
+                .inert, .io => {
                     row += 1;
                 },
                 .logic => {

@@ -13,6 +13,16 @@ pub const DirectionalWire1x1 = struct {
     dir: common.Direction,
     class: common.WireClass,
     local_track: u8,
+
+    pub fn format(
+        self: @This(),
+        writer: *std.Io.Writer,
+    ) std.Io.Writer.Error!void {
+        try writer.print(
+            "{f}[{f}].{f}[{}]",
+            .{ self.side, self.dir, self.class, self.local_track },
+        );
+    }
 };
 
 pub const DirectionalWire4x1 = struct {
@@ -20,6 +30,16 @@ pub const DirectionalWire4x1 = struct {
     dir: common.Direction,
     class: common.WireClass,
     local_track: u8,
+
+    pub fn format(
+        self: @This(),
+        writer: *std.Io.Writer,
+    ) std.Io.Writer.Error!void {
+        try writer.print(
+            "{f}[{f}].{f}[{}]",
+            .{ self.side, self.dir, self.class, self.local_track },
+        );
+    }
 };
 
 fn trackWindow(
@@ -345,7 +365,7 @@ pub fn decodeBramInput(in: common.BramInput, code: u5) BramInputSrc {
 }
 
 pub fn encodeBramInput(in: common.BramInput, src: BramInputSrc) ?u5 {
-    const code_count = switch (in) {
+    const code_count: usize = switch (in) {
         .a1, .a2, .di => 16,
         .we1, .we2 => 32,
     };
@@ -637,6 +657,7 @@ pub const SwitchSinkSrc = union(enum) {
 pub const TileSource = struct {
     corner: common.Corner,
     index: u2,
+    any: bool = false,
 };
 
 pub fn decodeSwitchSink(sink: DirectionalWire1x1, code: u4) SwitchSinkSrc {
@@ -725,7 +746,13 @@ pub fn decodeSwitchSink(sink: DirectionalWire1x1, code: u4) SwitchSinkSrc {
 pub fn encodeSwitchSink(sink: DirectionalWire1x1, src: SwitchSinkSrc) ?u4 {
     for (0..16) |i| {
         const code: u4 = @intCast(i);
-        if (std.meta.eql(decodeSwitchSink(sink, code), src))
+        var decoded = decodeSwitchSink(sink, code);
+        if (src == .out and src.out.any and decoded == .out) {
+            decoded.out.index = 0;
+            decoded.out.any = true;
+        }
+
+        if (std.meta.eql(decoded, src))
             return code;
     }
     return null;

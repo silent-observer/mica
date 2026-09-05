@@ -1,0 +1,24 @@
+format 1;
+device "M1/S";
+
+global {
+    CLK_PIN_ENABLE[0] = 1;
+}
+
+switch (0,2) {
+    E.L1[0] = SW.O1A;
+}
+
+logic (1,2) {
+    LUT1 = 0xFF00;
+    reg 1 {
+        REG = 1;
+    }
+    in A1 = O1A;
+    in CE1 = 1;
+}
+
+io (0,3) {
+    in O = S[R].L1[0];
+    in E = 1;
+}
