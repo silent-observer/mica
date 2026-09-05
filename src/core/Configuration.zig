@@ -69,7 +69,7 @@ pub const Bram = struct {
             const mask: u16 = (@as(u16, 1) << bit_width) - 1;
 
             const word_idx = (addr * bit_width) / 16;
-            const bit_idx: u4 = @intCast((addr * bit_width) % 16);
+            const bit_idx: u4 = @intCast(16 - bit_width - (addr * bit_width) % 16);
             return @intCast((data.data[word_idx] >> bit_idx) & mask);
         }
 
@@ -84,7 +84,7 @@ pub const Bram = struct {
             const mask: u16 = (@as(u16, 1) << bit_width) - 1;
 
             const word_idx = (addr * bit_width) / 16;
-            const bit_idx: u4 = @intCast((addr * bit_width) % 16);
+            const bit_idx: u4 = @intCast(16 - bit_width - (addr * bit_width) % 16);
 
             const old = data.data[word_idx] & ~(mask << bit_idx);
             const new = @as(u16, x) << bit_idx;

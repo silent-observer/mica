@@ -24,7 +24,7 @@ fn finish(e: *TextEmitter) []const u8 {
 
 fn emitHeader(e: *TextEmitter) !void {
     const w = &e.w.writer;
-    try w.print("format 1;\ndevice \"{s}\"\n\n", .{e.config.model.model_id});
+    try w.print("format 1;\ndevice \"{s}\";\n\n", .{e.config.model.model_id});
 }
 
 fn emitSwitchSink(
@@ -70,6 +70,7 @@ fn emitSwitchSink(
             }
         },
         .wire => |wire| try w.print("{f}", .{wire}),
+        .code => |c| try w.print("code {}", .{c}),
     }
     try w.writeAll(";\n");
 }
@@ -130,8 +131,10 @@ fn emitCommands(
                     reg,
                 );
             }
-        } else if (value_kind == .data) {
+        } else if (value_kind == .data) blk: {
             const data = e.config.getBramData(tile);
+            if (std.mem.allEqual(u16, &data.data, 0))
+                break :blk;
             try w.writeAll("    data {\n");
             const data_width: u16 = switch (t.*.width) {
                 0 => 1,
@@ -157,6 +160,7 @@ fn emitCommands(
                         try w.print("        " ++ addr_fmt ++ ":", .{addr});
                         for (chunk) |x|
                             try w.print(" " ++ data_fmt, .{x});
+                        try w.writeAll(";\n");
                     }
                 }
             }
@@ -291,7 +295,11 @@ fn emitLogicBlock(e: *TextEmitter, tile: common.TileCoords) !void {
 }
 
 fn emitBramBlock(e: *TextEmitter, tile: common.TileCoords) !void {
-    if (std.meta.eql(e.config.getBram(tile).*, std.mem.zeroes(Configuration.Bram)))
+    if ((tile.row - 1) % 4 != 0) return;
+    const bram = e.config.getBram(tile);
+    const bram_data = e.config.getBramData(tile);
+    if (std.meta.eql(bram.*, std.mem.zeroes(Configuration.Bram)) and
+        std.mem.allEqual(u16, &bram_data.data, 0))
         return;
     const w = &e.w.writer;
     try w.print("bram ({}, {}) ", .{ tile.row, tile.col });
@@ -308,6 +316,7 @@ fn emitBramBlock(e: *TextEmitter, tile: common.TileCoords) !void {
 }
 
 fn emitDspBlock(e: *TextEmitter, tile: common.TileCoords) !void {
+    if ((tile.row - 1) % 4 != 0) return;
     if (std.meta.eql(e.config.getDsp(tile).*, std.mem.zeroes(Configuration.Dsp)))
         return;
     const w = &e.w.writer;

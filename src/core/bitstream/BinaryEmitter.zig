@@ -55,13 +55,15 @@ fn endFrame(e: *BinaryEmitter) !void {
     try w.writeAll(data);
 
     e.frame_w.reset();
-    e.frame_offset = e.frame_offset + bit_len;
+    e.frame_offset += bit_len;
     e.frame_count += 1;
 }
 
 fn emitGlobal(e: *BinaryEmitter) !void {
     e.section = 0; // Global section
     e.frame_offset = 0;
+    if (std.meta.eql(e.config.global, std.mem.zeroes(Configuration.Global)))
+        return;
 
     // 8 bits
     for (e.config.global.clk_enable) |clk_en|
@@ -78,9 +80,11 @@ fn emitGlobal(e: *BinaryEmitter) !void {
 fn emitSwitches(e: *BinaryEmitter) !void {
     e.section = 1; // Switch section
     e.frame_offset = 0;
+    const total_bits = 144;
     for (e.config.switches) |sw| {
         if (std.meta.eql(sw, std.mem.zeroes(Configuration.Switch))) {
             try e.endFrame();
+            e.frame_offset += total_bits;
             continue;
         }
 
@@ -93,7 +97,7 @@ fn emitSwitches(e: *BinaryEmitter) !void {
             for (&ps.l4) |code|
                 e.frame_w.write(u4, code);
             // 4 bits
-            e.frame_w.write(u16, ps.l16);
+            e.frame_w.write(u4, ps.l16);
             // 36 bits in total
         }
     }
@@ -104,9 +108,11 @@ fn emitSwitches(e: *BinaryEmitter) !void {
 fn emitLogicTiles(e: *BinaryEmitter) !void {
     e.section = 2; // Logic section
     e.frame_offset = 0;
+    const total_bits = 103;
     for (e.config.logic) |config| {
         if (std.meta.eql(config, std.mem.zeroes(Configuration.Logic))) {
             try e.endFrame();
+            e.frame_offset += total_bits;
             continue;
         }
 
@@ -140,9 +146,11 @@ fn emitLogicTiles(e: *BinaryEmitter) !void {
 fn emitBramTiles(e: *BinaryEmitter) !void {
     e.section = 3; // BRAM section
     e.frame_offset = 0;
+    const total_bits = 176;
     for (e.config.bram) |config| {
         if (std.meta.eql(config, std.mem.zeroes(Configuration.Bram))) {
             try e.endFrame();
+            e.frame_offset += total_bits;
             continue;
         }
 
@@ -172,9 +180,11 @@ fn emitBramTiles(e: *BinaryEmitter) !void {
 fn emitDspTiles(e: *BinaryEmitter) !void {
     e.section = 4; // DSP section
     e.frame_offset = 0;
+    const total_bits = 184;
     for (e.config.dsp) |config| {
         if (std.meta.eql(config, std.mem.zeroes(Configuration.Dsp))) {
             try e.endFrame();
+            e.frame_offset += total_bits;
             continue;
         }
 
@@ -210,9 +220,11 @@ fn emitDspTiles(e: *BinaryEmitter) !void {
 fn emitIoTiles(e: *BinaryEmitter) !void {
     e.section = 5; // IO section
     e.frame_offset = 0;
+    const total_bits = 35;
     for (e.config.io) |config| {
         if (std.meta.eql(config, std.mem.zeroes(Configuration.Io))) {
             try e.endFrame();
+            e.frame_offset += total_bits;
             continue;
         }
 
@@ -237,15 +249,15 @@ fn emitIoTiles(e: *BinaryEmitter) !void {
 fn emitBramData(e: *BinaryEmitter) !void {
     e.section = 6; // BRAM data section
     e.frame_offset = 0;
+    const total_bits = 4096;
     for (e.config.bram_data) |config| {
         if (std.mem.allEqual(u16, &config.data, 0)) {
             try e.endFrame();
+            e.frame_offset += total_bits;
             continue;
         }
 
-        var i = config.data.len;
-        while (i > 0) {
-            i += 1;
+        for (0..config.data.len) |i| {
             e.frame_w.write(u16, config.data[i]);
         }
 

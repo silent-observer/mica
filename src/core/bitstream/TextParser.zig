@@ -26,7 +26,7 @@ fn init(input: []const u8, alloc: std.mem.Allocator) TextParser {
 
 fn peek(p: *const TextParser, i: usize) ?u8 {
     return if (p.pos + i < p.input.len)
-        p.input[p.pos]
+        p.input[p.pos + i]
     else
         null;
 }
@@ -513,7 +513,7 @@ fn parseSwitchBlock(p: *TextParser) !void {
         );
 
         const code = wire_codes.encodeSwitchSink(sink, source) orelse
-            @panic("Couldn't find code for switch sink!");
+            try p.err("For switch sink {f}, source {f} is unencodable", .{ sink, source });
 
         const per_side = p.config.?.getSwitch(sw).sides.getPtr(sink_side);
         switch (sink_class) {
@@ -731,16 +731,21 @@ fn parseCommands(
 ) !void {
     try p.expect('{');
 
+    var bram_width: ?u16 = null;
     while (!p.check('}')) {
+        var found = false;
         const word = try p.parseWord();
         if (std.mem.eql(u8, word, "in")) {
+            found = true;
             const input_word = try p.parseWord();
+            var found_input = false;
             inline for (input_table) |row| {
                 const expected_input_word: []const u8 = comptime row.@"0";
                 const input_width: usize = comptime row.@"1";
                 const config_field: []const u8 = comptime row.@"2";
                 const input_variant: []const u8 = comptime row.@"3";
                 if (std.mem.eql(u8, input_word, expected_input_word)) {
+                    found_input = true;
                     const index: ?u4 = if (input_width != 0) blk: { // Array
                         try p.expect('[');
                         const index = try p.parseNumber(u4);
@@ -788,14 +793,27 @@ fn parseCommands(
                     try p.expect(';');
                 }
             }
+
+            if (!found_input) {
+                if (T == Configuration.Global)
+                    try p.err("There can't be inputs in global block", .{})
+                else
+                    try p.err(
+                        "No such input '{s}' for {s} tile",
+                        .{
+                            input_word,
+                            @tagName(p.config.?.model.tileType(tile)),
+                        },
+                    );
+            }
         } else {
-            var bram_width: ?u16 = null;
             inline for (table) |row| {
                 const expected_word: []const u8 = row.@"0";
                 const width: usize = row.@"1";
                 const config_field: []const u8 = row.@"2";
                 const value_kind: text_tables.ValueKind = row.@"3";
                 if (std.mem.eql(u8, word, expected_word)) {
+                    found = true;
                     const index: ?u4 = if (width != 0) blk: { // Array
                         try p.expect('[');
                         const index = try p.parseNumber(u4);
@@ -831,17 +849,27 @@ fn parseCommands(
                             try p.expect(';');
                         },
                         .width => {
-                            const x = try p.parseNumber(u16);
-                            const width_val: u3 = switch (x) {
-                                1 => 0,
-                                2 => 1,
-                                4 => 2,
-                                8 => 3,
-                                16 => 4,
-                                else => try p.err("BRAM width can only be 1, 2, 4, 8 or 16, not {}", .{x}),
-                            };
-                            bram_width = x;
-                            @field(t.*, config_field) = width_val;
+                            if (p.check('c')) {
+                                const code_word = try p.parseWord();
+                                if (!std.mem.eql(u8, code_word, "code"))
+                                    try p.err("BRAM width can only be a number or 'code N'", .{});
+
+                                const x = try p.parseNumber(u3);
+                                bram_width = 16;
+                                @field(t.*, config_field) = x;
+                            } else {
+                                const x = try p.parseNumber(u16);
+                                const width_val: u3 = switch (x) {
+                                    1 => 0,
+                                    2 => 1,
+                                    4 => 2,
+                                    8 => 3,
+                                    16 => 4,
+                                    else => try p.err("BRAM width can only be 1, 2, 4, 8 or 16, not {}", .{x}),
+                                };
+                                bram_width = x;
+                                @field(t.*, config_field) = width_val;
+                            }
                             try p.expect(';');
                         },
                         .cin_src => {
@@ -908,15 +936,15 @@ fn parseCommands(
                             try p.expect('{');
                             const data = p.config.?.getBramData(tile);
                             while (!p.check('}')) {
-                                const addr = try p.parseHexNumber(u16);
-                                if (addr >= addr_depth)
-                                    try p.err(
-                                        "If WIDTH={}, BRAM addresses only go up to 0x{X}, 0x{X} is outside that range",
-                                        .{ data_width, addr_depth - 1, addr },
-                                    );
+                                var addr = try p.parseHexNumber(u16);
 
                                 try p.expect(':');
                                 while (!p.check(';')) {
+                                    if (addr >= addr_depth)
+                                        try p.err(
+                                            "If WIDTH={}, BRAM addresses only go up to 0x{X}, 0x{X} is outside that range",
+                                            .{ data_width, addr_depth - 1, addr },
+                                        );
                                     switch (data_width) {
                                         1 => data.set(u1, addr, try p.parseHexNumber(u1)),
                                         2 => data.set(u2, addr, try p.parseHexNumber(u2)),
@@ -925,12 +953,26 @@ fn parseCommands(
                                         16 => data.set(u16, addr, try p.parseHexNumber(u16)),
                                         else => unreachable,
                                     }
+                                    addr += 1;
                                 }
+                                try p.expect(';');
                             }
                             try p.expect('}');
                         },
                     }
                 }
+            }
+            if (!found) {
+                if (T == Configuration.Global)
+                    try p.err("No such parameter '{s}' for global block", .{word})
+                else
+                    try p.err(
+                        "No such parameter '{s}' for {s} tile",
+                        .{
+                            word,
+                            @tagName(p.config.?.model.tileType(tile)),
+                        },
+                    );
             }
         }
     }

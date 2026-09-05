@@ -115,14 +115,14 @@ LogicInputSrc =
 Bram = 'bram' CellCoordinates '{' BramCommand* '}'
 BramCommand =
   BramConfig
-| BramInputCommand
 | BramData
+| BramInputCommand
 
 BramConfig =
   'WIDTH' '=' BramWidth ';'
 | 'CLK' '=' 'CLK' DecNumber(3) ';'
 
-BramWidth = 1 | 2 | 4 | 8 | 16
+BramWidth = '1' | '2' | '4' | '8' | '16' | 'code' DecNumber(3)
 
 BramInputCommand = 'in' BramInput '=' BramInputSrc ';'
 BramInput =

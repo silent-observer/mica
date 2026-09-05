@@ -49,7 +49,7 @@ pub const reg_table = .{
     .{ "REG", 0, "reg", ValueKind.bit },
     .{ "CLK", 0, "clk", ValueKind.clk },
     .{ "RST_EN", 0, "rst_en", ValueKind.bit },
-    .{ "RST", 0, "clk", ValueKind.rst },
+    .{ "RST", 0, "rst", ValueKind.rst },
 };
 
 pub const bram_table = .{
@@ -72,7 +72,7 @@ pub const dsp_table = .{
     .{ "ACC", 0, "acc", ValueKind.bit },
     .{ "CLK", 0, "clk", ValueKind.clk },
     .{ "RST_EN", 0, "rst_en", ValueKind.bit },
-    .{ "RST", 0, "clk", ValueKind.rst },
+    .{ "RST", 0, "rst", ValueKind.rst },
 };
 
 pub const dsp_inputs_table = .{
@@ -91,7 +91,7 @@ pub const io_table = .{
     .{ "PULLDOWN", 0, "pulldown", ValueKind.bit },
     .{ "CLK", 0, "clk", ValueKind.clk },
     .{ "RST_EN", 0, "rst_en", ValueKind.bit },
-    .{ "RST", 0, "clk", ValueKind.rst },
+    .{ "RST", 0, "rst", ValueKind.rst },
 };
 
 pub const io_inputs_table = .{

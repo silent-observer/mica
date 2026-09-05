@@ -1332,6 +1332,9 @@ Total: 6 + 2x12x4 + 16x4 + 2x5 = 176 bits
 DATA: [4096]bit
 ```
 
+Data is written in address order: starting from the lowest address to the highest address
+The bits in data are written in big-endian order.
+
 Total: 4096 bits
 
 ### DSP tile configuration
@@ -1670,21 +1673,21 @@ is tied to constant `1` so the output driver is enabled.
 format 1;
 device "M1/S";
 
-switch (0,2) {
+switch (0, 2) {
     W.L1[0] = NW.I;
     E.L1[0] = SW.O1A;
 }
 
-logic (1,2) {
+logic (1, 2) {
     LUT1 = 0xFF00;
     in A1 = N[L].L1[0];
 }
 
-io (0,2) {
+io (0, 2) {
     PULLDOWN = 1;
 }
 
-io (0,3) {
+io (0, 3) {
     in O = S[R].L1[0];
     in E = 1;
 }
@@ -1741,11 +1744,11 @@ global {
     CLK_PIN_ENABLE[0] = 1;
 }
 
-switch (0,2) {
+switch (0, 2) {
     E.L1[0] = SW.O1A;
 }
 
-logic (1,2) {
+logic (1, 2) {
     LUT1 = 0xFF00;
     reg 1 {
         REG = 1;
@@ -1754,7 +1757,7 @@ logic (1,2) {
     in CE1 = 1;
 }
 
-io (0,3) {
+io (0, 3) {
     in O = S[R].L1[0];
     in E = 1;
 }
@@ -1861,8 +1864,8 @@ operands are local outputs of the tile that needs them and cost no routing at al
 both are single L1 hops on the column boundary east of the logic tiles:
 
 ```
-switch (26,37) { N.L1[3] = SW.O2A; }    // q3 up   -> logic (26,37) in D2 = E[U].L1[3], code 10
-switch (26,37) { S.L1[2] = NW.O1A; }    // q0 down -> logic (27,37) in B1 = E[D].L1[2], code 7
+switch (26, 37) { N.L1[3] = SW.O2A; }    // q3 up   -> logic (26,37) in D2 = E[U].L1[3], code 10
+switch (26, 37) { S.L1[2] = NW.O1A; }    // q0 down -> logic (27,37) in B1 = E[D].L1[2], code 7
 ```
 
 For the first, `(27,37)` is the south-west neighbour of switchbox `(26,37)`, so `T[3]`, and on the
@@ -1892,9 +1895,9 @@ staggered `d` values (`0`, `2` and `4`) are exactly what lets four signals share
 The route for `LSB.O1A` to `BRAM.A[0]`:
 
 ```
-switch (25,36) { E.L1[1] = SE.O1A; }    // code 2
-switch (25,37) { E.L1[1] = W.L1[1]; }   // code 4, straight through
-                                        // bram (25,38) in A1[0] = H1[R].L1[1], code 11
+switch (25, 36) { E.L1[1] = SE.O1A; }    // code 2
+switch (25, 37) { E.L1[1] = W.L1[1]; }   // code 4, straight through
+                                         // bram (25,38) in A1[0] = H1[R].L1[1], code 11
 ```
 
 Tile `(26,37)` is the south-east neighbour of switchbox `(25,36)`, so `T[2]`; on the east side
@@ -1907,8 +1910,8 @@ parity with secondary edge `H1`, `d = 0` and secondary direction east; the secon
 The route for `LSB.O2A` to `BRAM.A[1]`:
 
 ```
-switch (25,37) { E.L1[2] = SW.O2A; }    // code 3
-                                        // bram (25,38) in A1[1] = H1[R].L1[2], code 14
+switch (25, 37) { E.L1[2] = SW.O2A; }    // code 3
+                                         // bram (25,38) in A1[1] = H1[R].L1[2], code 14
 ```
 
 The shortest of the four: tile `(26,37)` is `T[3]` of switchbox `(25,37)`, and code `3` on the east
@@ -1919,9 +1922,9 @@ L1[2], L4[2]`, and `L1[2]` is code `14`. **300 ps.**
 The route for `MSB.O1A` to `BRAM.A[2]`:
 
 ```
-switch (26,37) { N.L1[5] = SW.O1A; }    // code 3
-switch (25,37) { E.L1[3] = S.L1[5]; }   // code 6, right turn
-                                        // bram (25,38) in A1[2] = H1[R].L1[3], code 12
+switch (26, 37) { N.L1[5] = SW.O1A; }    // code 3
+switch (25, 37) { E.L1[3] = S.L1[5]; }   // code 6, right turn
+                                         // bram (25,38) in A1[2] = H1[R].L1[3], code 12
 ```
 
 Tile `(27,37)` is `T[3]` of switchbox `(26,37)`; on the north side code `3` selects
@@ -1934,11 +1937,11 @@ parity, secondary `H1` with `d = 2`, so its window is `L16[1], L1[3], L4[3], L4[
 The route for `MSB.O2A` to `BRAM.A[3]`:
 
 ```
-switch (27,36) { N.L1[1] = NE.O2A; }    // code 1
-switch (26,36) { N.L1[1] = S.L1[1]; }   // code 4, straight through
-switch (25,36) { E.L1[5] = S.L1[1]; }   // code 6, right turn
-switch (25,37) { E.L1[5] = W.L1[5]; }   // code 4, straight through
-                                        // bram (25,38) in A1[3] = H1[R].L1[5], code 13
+switch (27, 36) { N.L1[1] = NE.O2A; }    // code 1
+switch (26, 36) { N.L1[1] = S.L1[1]; }   // code 4, straight through
+switch (25, 36) { E.L1[5] = S.L1[1]; }   // code 6, right turn
+switch (25, 37) { E.L1[5] = W.L1[5]; }   // code 4, straight through
+                                         // bram (25,38) in A1[3] = H1[R].L1[5], code 13
 ```
 
 The longest, because `A1[3]` belongs to `E0` - the far side of the BRAM - and so takes the one
@@ -1985,12 +1988,12 @@ following the `4*cell + j` rule. Each segment then crosses the die to its pin. S
 clearest illustration of how the three wire lengths compose:
 
 ```
-switch (24,37) { W.L1[3] = SE.DO[0]; }  // code 2  - leave the BRAM heading west
-switch (24,36) { W.L4[1] = E.L1[3]; }   // code 13 - L1 -> L4
-switch (24,32) { W.L16[0] = E.L4[1]; }  // code 8  - L4 -> L16
-switch (24,16) { W.L16[0] = E.L16[0]; } // code 4  - L16 -> L16, straight
-switch (24,0)  { S.L1[0] = E.L16[0]; }  // code 14 - L16 -> L1, left turn
-                                        // io (25,0) in O = E[D].L1[0], code 2
+switch (24, 37) { W.L1[3] = SE.DO[0]; }  // code 2  - leave the BRAM heading west
+switch (24, 36) { W.L4[1] = E.L1[3]; }   // code 13 - L1 -> L4
+switch (24, 32) { W.L16[0] = E.L4[1]; }  // code 8  - L4 -> L16
+switch (24, 16) { W.L16[0] = E.L16[0]; } // code 4  - L16 -> L16, straight
+switch (24, 0)  { S.L1[0] = E.L16[0]; }  // code 14 - L16 -> L1, left turn
+                                         // io (25,0) in O = E[D].L1[0], code 2
 ```
 
 Thirty-seven columns in five hops. The `L1 -> L4` step is the `L1[str][3u]` entry with `u = 1`, so
@@ -2058,188 +2061,188 @@ global {
     CLK_PIN_ENABLE[0] = 1;
 }
 
-switch (0,16) {
+switch (0, 16) {
     W.L1[0] = E.L16[0];
 }
 
-switch (0,32) {
+switch (0, 32) {
     W.L1[0] = E.L4[0];
     W.L16[0] = S.L16[0];
 }
 
-switch (0,36) {
+switch (0, 36) {
     W.L4[0] = S.L16[0];
 }
 
-switch (0,47) {
+switch (0, 47) {
     E.L1[0] = S.L16[0];
 }
 
-switch (16,32) {
+switch (16, 32) {
     N.L16[0] = E.L4[0];
 }
 
-switch (16,36) {
+switch (16, 36) {
     N.L16[0] = S.L4[1];
     W.L4[0] = S.L4[0];
 }
 
-switch (16,43) {
+switch (16, 43) {
     E.L4[0] = S.L4[0];
 }
 
-switch (16,47) {
+switch (16, 47) {
     N.L16[0] = W.L4[0];
 }
 
-switch (20,36) {
+switch (20, 36) {
     N.L4[0] = S.L4[1];
     N.L4[1] = S.L4[0];
 }
 
-switch (20,43) {
+switch (20, 43) {
     N.L4[0] = S.L4[0];
 }
 
-switch (24,0) {
+switch (24, 0) {
     S.L1[0] = E.L16[0];
 }
 
-switch (24,16) {
+switch (24, 16) {
     W.L16[0] = E.L16[0];
 }
 
-switch (24,32) {
+switch (24, 32) {
     S.L4[0] = E.L4[0];
     W.L16[0] = E.L4[1];
 }
 
-switch (24,36) {
+switch (24, 36) {
     N.L4[0] = E.L1[2];
     N.L4[1] = E.L1[5];
     W.L4[0] = E.L1[0];
     W.L4[1] = E.L1[3];
 }
 
-switch (24,37) {
+switch (24, 37) {
     W.L1[0] = SE.DO[1];
     W.L1[2] = SE.DO[3];
     W.L1[3] = SE.DO[0];
     W.L1[5] = SE.DO[2];
 }
 
-switch (24,38) {
+switch (24, 38) {
     E.L1[0] = S.L1[2];
 }
 
-switch (24,39) {
+switch (24, 39) {
     E.L4[0] = W.L1[0];
 }
 
-switch (24,43) {
+switch (24, 43) {
     N.L4[0] = W.L4[0];
 }
 
-switch (25,36) {
+switch (25, 36) {
     E.L1[1] = SE.O1A;
     E.L1[5] = S.L1[1];
 }
 
-switch (25,37) {
+switch (25, 37) {
     E.L1[1] = W.L1[1];
     E.L1[2] = SW.O2A;
     E.L1[3] = S.L1[5];
     E.L1[5] = W.L1[5];
 }
 
-switch (25,38) {
+switch (25, 38) {
     N.L1[2] = SW.DO[5];
 }
 
-switch (26,36) {
+switch (26, 36) {
     N.L1[1] = S.L1[1];
 }
 
-switch (26,37) {
+switch (26, 37) {
     N.L1[3] = SW.O2A;
     N.L1[5] = SW.O1A;
     S.L1[2] = NW.O1A;
 }
 
-switch (26,38) {
+switch (26, 38) {
     E.L1[3] = NW.DO[4];
     E.L4[1] = NW.DO[6];
 }
 
-switch (26,39) {
+switch (26, 39) {
     S.L1[1] = W.L1[3];
 }
 
-switch (26,42) {
+switch (26, 42) {
     E.L1[0] = W.L4[1];
 }
 
-switch (26,43) {
+switch (26, 43) {
     E.L1[0] = W.L1[0];
 }
 
-switch (26,44) {
+switch (26, 44) {
     E.L4[0] = W.L1[0];
 }
 
-switch (26,48) {
+switch (26, 48) {
     E.L16[0] = W.L4[0];
 }
 
-switch (26,64) {
+switch (26, 64) {
     N.L1[0] = W.L16[0];
 }
 
-switch (27,36) {
+switch (27, 36) {
     N.L1[1] = NE.O2A;
 }
 
-switch (27,39) {
+switch (27, 39) {
     S.L1[1] = N.L1[1];
 }
 
-switch (28,32) {
+switch (28, 32) {
     S.L4[0] = N.L4[0];
 }
 
-switch (28,39) {
+switch (28, 39) {
     E.L4[0] = N.L1[1];
 }
 
-switch (28,43) {
+switch (28, 43) {
     E.L4[0] = W.L4[0];
 }
 
-switch (28,47) {
+switch (28, 47) {
     S.L4[0] = W.L4[0];
 }
 
-switch (32,32) {
+switch (32, 32) {
     S.L16[0] = N.L4[0];
 }
 
-switch (32,47) {
+switch (32, 47) {
     S.L16[0] = N.L4[0];
 }
 
-switch (48,16) {
+switch (48, 16) {
     W.L1[0] = E.L16[0];
 }
 
-switch (48,32) {
+switch (48, 32) {
     W.L16[0] = N.L16[0];
 }
 
-switch (48,47) {
+switch (48, 47) {
     E.L1[0] = N.L16[0];
 }
 
-logic (26,37) {
+logic (26, 37) {
     CARRY = 1;
     CIN_SRC = 1;
     LUT1 = 0x0F00;
@@ -2258,7 +2261,7 @@ logic (26,37) {
     in CE2 = 1;
 }
 
-logic (27,37) {
+logic (27, 37) {
     CARRY = 1;
     CIN_SRC = above;
     LUT1 = 0x3600;
@@ -2277,7 +2280,7 @@ logic (27,37) {
     in CE2 = 1;
 }
 
-bram (25,38) {
+bram (25, 38) {
     WIDTH = 8;
     in A1[0] = H1[R].L1[1];
     in A1[1] = H1[R].L1[2];
@@ -2289,37 +2292,37 @@ bram (25,38) {
     }
 }
 
-io (0,16) {
+io (0, 16) {
     in O = S[L].L1[0];
     in E = 1;
 }
 
-io (0,32) {
+io (0, 32) {
     in O = S[L].L1[0];
     in E = 1;
 }
 
-io (0,48) {
+io (0, 48) {
     in O = S[R].L1[0];
     in E = 1;
 }
 
-io (25,0) {
+io (25, 0) {
     in O = E[D].L1[0];
     in E = 1;
 }
 
-io (26,65) {
+io (26, 65) {
     in O = W[U].L1[0];
     in E = 1;
 }
 
-io (49,16) {
+io (49, 16) {
     in O = N[L].L1[0];
     in E = 1;
 }
 
-io (49,48) {
+io (49, 48) {
     in O = N[R].L1[0];
     in E = 1;
 }
@@ -2327,8 +2330,8 @@ io (49,48) {
 
 Three details in this listing are worth pointing out.
 
-`switch (26,37) { S.L1[2] = NW.O1A; }`, `switch (26,38) { E.L1[3] = NW.DO[4]; }` and
-`switch (26,38) { E.L4[1] = NW.DO[6]; }` all encode as code `0`, which would normally be skipped -
+`switch (26, 37) { S.L1[2] = NW.O1A; }`, `switch (26,38) { E.L1[3] = NW.DO[4]; }` and
+`switch (26, 38) { E.L4[1] = NW.DO[6]; }` all encode as code `0`, which would normally be skipped -
 but each is read by a downstream sink, so the exception in "Textual format" applies and they are
 emitted explicitly.
 

@@ -713,12 +713,34 @@ pub fn encodeIoInput(in: common.IoInput, side: common.Side, src: IoInputSrc) ?u5
 pub const SwitchSinkSrc = union(enum) {
     out: TileSource,
     wire: DirectionalWire1x1,
+    code: u4,
+
+    pub fn format(
+        self: @This(),
+        writer: *std.Io.Writer,
+    ) std.Io.Writer.Error!void {
+        switch (self) {
+            .out => |ts| try writer.print("{f}", .{ts}),
+            .wire => |wire| try writer.print("{f}", .{wire}),
+            .code => |code| try writer.print("code {}", .{code}),
+        }
+    }
 };
 
 pub const TileSource = struct {
     corner: common.Corner,
     index: u2,
     any: bool = false,
+
+    pub fn format(
+        self: @This(),
+        writer: *std.Io.Writer,
+    ) std.Io.Writer.Error!void {
+        if (self.any)
+            try writer.print("{f}.out", .{self.corner})
+        else
+            try writer.print("{f}.out[{}]", .{ self.corner, self.index });
+    }
 };
 
 pub fn decodeSwitchSink(sink: DirectionalWire1x1, code: u4) SwitchSinkSrc {
