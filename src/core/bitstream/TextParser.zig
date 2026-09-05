@@ -123,6 +123,29 @@ fn parseNumber(p: *TextParser, comptime T: type) !T {
     return @intCast(x);
 }
 
+fn parseHexNumber(p: *TextParser, comptime T: type) !T {
+    comptime std.debug.assert(@typeInfo(T) == .int);
+    comptime std.debug.assert(@typeInfo(T).int.signedness == .unsigned);
+    p.skipWhitespace();
+    if (p.eof())
+        try p.err("Expected a number, but got end of file", .{});
+    const start = p.pos;
+    while (p.peek(0)) |c| {
+        if (std.mem.countScalar(u8, "0123456789ABCDEFabcdef", c) == 0) break;
+        p.pos += 1;
+    }
+    const end = p.pos;
+    const x = std.fmt.parseInt(u64, p.input[start..end], 16) catch
+        try p.err("Expected a hex number, but got '{s}'", .{p.input[start..end]});
+    const actual_bits: usize = if (x == 0) 1 else std.math.log2_int(u64, x) + 1;
+    if (actual_bits > @typeInfo(T).int.bits)
+        try p.err(
+            "Expected a {}-bit number, but got '{}', which needs {} bits",
+            .{ @typeInfo(T).int.bits, x, actual_bits },
+        );
+    return @intCast(x);
+}
+
 fn parseDeviceName(p: *TextParser) ![]const u8 {
     p.skipWhitespace();
     if (p.peek(6) == null)
@@ -633,7 +656,7 @@ fn parseDirectionalWire4x1(p: *TextParser, side_word: []const u8) !wire_codes.Di
     };
 }
 
-fn parseLogicInputSrc(p: *TextParser, _: common.TileCoords, in: common.LogicInput) !u5 {
+fn parseLogicInputSrc(p: *TextParser, in: common.LogicInput) !u5 {
     if (try p.parseInputConstant()) |c|
         return wire_codes.encodeLogicInput(in, if (c == 0) .zero else .one).?;
 
@@ -649,7 +672,7 @@ fn parseLogicInputSrc(p: *TextParser, _: common.TileCoords, in: common.LogicInpu
         try p.err("For input {f}, wire {f} is not accessible", .{ in, wire });
 }
 
-fn parseBramInputSrc(p: *TextParser, _: common.TileCoords, in: common.BramInput) !u5 {
+fn parseBramInputSrc(p: *TextParser, in: common.BramInput) !u5 {
     if (try p.parseInputConstant()) |c|
         return wire_codes.encodeBramInput(in, if (c == 0) .zero else .one).?;
 
@@ -666,7 +689,7 @@ fn parseBramInputSrc(p: *TextParser, _: common.TileCoords, in: common.BramInput)
         try p.err("For input {f}, wire {f} is not accessible", .{ in, wire });
 }
 
-fn parseDspInputSrc(p: *TextParser, _: common.TileCoords, in: common.DspInput) !u5 {
+fn parseDspInputSrc(p: *TextParser, in: common.DspInput) !u5 {
     if (try p.parseInputConstant()) |c|
         return wire_codes.encodeDspInput(in, if (c == 0) .zero else .one).?;
 
@@ -703,7 +726,6 @@ fn parseCommands(
     comptime input_table: anytype,
     comptime T: type,
     comptime Input: type,
-    comptime parse_input: fn (p: *TextParser, tile: common.TileCoords, in: Input) error{ParsingError}!u5,
     tile: common.TileCoords,
     t: *T,
 ) !void {
@@ -739,7 +761,17 @@ fn parseCommands(
                         @unionInit(Input, input_variant, @intCast(index.?))
                     else
                         @unionInit(Input, input_variant, {});
-                    const code: u5 = try parse_input(p, tile, in);
+
+                    const code: u5 = if (Input == common.LogicInput)
+                        try p.parseLogicInputSrc(in)
+                    else if (Input == common.BramInput)
+                        try p.parseBramInputSrc(in)
+                    else if (Input == common.DspInput)
+                        try p.parseDspInputSrc(in)
+                    else if (Input == common.IoInput)
+                        try p.parseIoInputSrc(tile, in)
+                    else
+                        @panic("Incorrect Input type");
 
                     if (input_width != 0) {
                         // Array
@@ -780,11 +812,10 @@ fn parseCommands(
                         try p.expect('=');
 
                     switch (value_kind) {
-                        .bit, .bin, .dec, .hex => {
+                        .bit, .bin, .hex => {
                             const IntType = switch (value_kind) {
                                 .bit => bool,
                                 .bin => |X| X,
-                                .dec => |X| X,
                                 .hex => |X| X,
                                 else => comptime unreachable,
                             };
@@ -864,8 +895,7 @@ fn parseCommands(
                                 text_tables.reg_table,
                                 .{},
                                 Configuration.Logic.Reg,
-                                common.LogicInput,
-                                parseLogicInputSrc,
+                                void,
                                 tile,
                                 &t.*.regs[num - 1],
                             );
@@ -878,7 +908,7 @@ fn parseCommands(
                             try p.expect('{');
                             const data = p.config.?.getBramData(tile);
                             while (!p.check('}')) {
-                                const addr = try p.parseNumber(u16);
+                                const addr = try p.parseHexNumber(u16);
                                 if (addr >= addr_depth)
                                     try p.err(
                                         "If WIDTH={}, BRAM addresses only go up to 0x{X}, 0x{X} is outside that range",
@@ -887,49 +917,12 @@ fn parseCommands(
 
                                 try p.expect(':');
                                 while (!p.check(';')) {
-                                    const x = try p.parseNumber(u16);
-                                    if (x >= (@as(u32, 1) << @intCast(data_width))) {
-                                        try p.err(
-                                            "If WIDTH={}, BRAM data only go up to 0x{X}, 0x{X} is outside that range",
-                                            .{ data_width, (@as(u32, 1) << @intCast(data_width)) - 1, x },
-                                        );
-                                    }
                                     switch (data_width) {
-                                        1 => {
-                                            const byte_idx = addr / 8;
-                                            const bit_idx: u3 = @intCast(addr % 8);
-                                            setBits(
-                                                &data.data[byte_idx],
-                                                @intCast(x),
-                                                bit_idx,
-                                                0x1,
-                                            );
-                                        },
-                                        2 => {
-                                            const byte_idx = addr / 4;
-                                            const bit_idx: u3 = @intCast(2 * (addr % 4));
-                                            setBits(
-                                                &data.data[byte_idx],
-                                                @intCast(x),
-                                                bit_idx,
-                                                0x3,
-                                            );
-                                        },
-                                        4 => {
-                                            const byte_idx = addr / 2;
-                                            const bit_idx: u3 = @intCast(4 * (addr % 2));
-                                            setBits(
-                                                &data.data[byte_idx],
-                                                @intCast(x),
-                                                bit_idx,
-                                                0xF,
-                                            );
-                                        },
-                                        8 => data.data[addr] = @intCast(x),
-                                        16 => {
-                                            data.data[2 * addr] = @intCast(x & 0xFF);
-                                            data.data[2 * addr + 1] = @intCast(x >> 8);
-                                        },
+                                        1 => data.set(u1, addr, try p.parseHexNumber(u1)),
+                                        2 => data.set(u2, addr, try p.parseHexNumber(u2)),
+                                        4 => data.set(u4, addr, try p.parseHexNumber(u4)),
+                                        8 => data.set(u8, addr, try p.parseHexNumber(u8)),
+                                        16 => data.set(u16, addr, try p.parseHexNumber(u16)),
                                         else => unreachable,
                                     }
                                 }
@@ -950,9 +943,8 @@ fn parseGlobalBlock(p: *TextParser) !void {
         text_tables.global_table,
         .{},
         Configuration.Global,
-        common.LogicInput,
-        parseLogicInputSrc,
-        .{ .row = 0, .col = 0 },
+        void,
+        undefined,
         &p.config.?.global,
     );
 }
@@ -970,7 +962,6 @@ fn parseLogicBlock(p: *TextParser) !void {
         text_tables.logic_inputs_table,
         Configuration.Logic,
         common.LogicInput,
-        parseLogicInputSrc,
         tile,
         p.config.?.getLogic(tile),
     );
@@ -989,7 +980,6 @@ fn parseBramBlock(p: *TextParser) !void {
         text_tables.bram_inputs_table,
         Configuration.Bram,
         common.BramInput,
-        parseBramInputSrc,
         tile,
         p.config.?.getBram(tile),
     );
@@ -1008,7 +998,6 @@ fn parseDspBlock(p: *TextParser) !void {
         text_tables.dsp_inputs_table,
         Configuration.Dsp,
         common.DspInput,
-        parseDspInputSrc,
         tile,
         p.config.?.getDsp(tile),
     );
@@ -1027,7 +1016,6 @@ fn parseIoBlock(p: *TextParser) !void {
         text_tables.io_inputs_table,
         Configuration.Io,
         common.IoInput,
-        parseIoInputSrc,
         tile,
         p.config.?.getIo(tile),
     );

@@ -4,15 +4,9 @@ const Io = std.Io;
 const core = @import("core");
 
 pub fn main(init: std.process.Init) !void {
-    // Accessing command line arguments:
-    const args = try init.minimal.args.toSlice(init.arena.allocator());
-    for (args) |arg| {
-        std.log.info("arg: {s}", .{arg});
-    }
-
     const text = try std.Io.Dir.cwd().readFileAlloc(
         init.io,
-        "examples/counter.mica",
+        "examples/inverter.mica",
         init.gpa,
         .unlimited,
     );
@@ -22,8 +16,15 @@ pub fn main(init: std.process.Init) !void {
     defer if (r.c) |c| c.deinit(init.gpa);
     defer if (r.err) |e| init.gpa.free(e);
 
-    if (r.err) |e|
+    if (r.err) |e| {
         std.debug.print("{s}\n", .{e});
+        return;
+    }
+
+    const emitted = core.TextEmitter.emit(&r.c.?, init.gpa);
+    defer init.gpa.free(emitted);
+
+    std.debug.print("{s}", .{emitted});
 
     // var f = core.Fabric.build(init.gpa, .mica1s);
     // defer f.deinit();

@@ -6,6 +6,18 @@ pub const LogicOutput = enum(u2) {
     o1b = 1,
     o2a = 2,
     o2b = 3,
+
+    pub fn format(
+        self: @This(),
+        writer: *std.Io.Writer,
+    ) std.Io.Writer.Error!void {
+        switch (self) {
+            .o1a => try writer.writeAll("O1A"),
+            .o1b => try writer.writeAll("O1B"),
+            .o2a => try writer.writeAll("O2A"),
+            .o2b => try writer.writeAll("O2B"),
+        }
+    }
 };
 
 pub const DirectionalWire1x1 = struct {
@@ -101,6 +113,19 @@ pub const LogicInputSrc = union(enum) {
     local: LogicOutput,
     wire: DirectionalWire1x1,
     code: u5,
+
+    pub fn format(
+        self: @This(),
+        writer: *std.Io.Writer,
+    ) std.Io.Writer.Error!void {
+        switch (self) {
+            .zero => try writer.writeAll("0"),
+            .one => try writer.writeAll("1"),
+            .local => |lo| try writer.print("{f}", .{lo}),
+            .wire => |wire| try writer.print("{f}", .{wire}),
+            .code => |code| try writer.print("code {}", .{code}),
+        }
+    }
 };
 
 const LogicInputDesc = struct {
@@ -209,6 +234,18 @@ pub const BramInputSrc = union(enum) {
     one: void,
     wire: DirectionalWire4x1,
     code: u5,
+
+    pub fn format(
+        self: @This(),
+        writer: *std.Io.Writer,
+    ) std.Io.Writer.Error!void {
+        switch (self) {
+            .zero => try writer.writeAll("0"),
+            .one => try writer.writeAll("1"),
+            .wire => |wire| try writer.print("{f}", .{wire}),
+            .code => |code| try writer.print("code {}", .{code}),
+        }
+    }
 };
 
 const BramInputDesc = struct {
@@ -382,6 +419,18 @@ pub const DspInputSrc = union(enum) {
     one: void,
     wire: DirectionalWire4x1,
     code: u5,
+
+    pub fn format(
+        self: @This(),
+        writer: *std.Io.Writer,
+    ) std.Io.Writer.Error!void {
+        switch (self) {
+            .zero => try writer.writeAll("0"),
+            .one => try writer.writeAll("1"),
+            .wire => |wire| try writer.print("{f}", .{wire}),
+            .code => |code| try writer.print("code {}", .{code}),
+        }
+    }
 };
 
 const DspInputDesc = struct {
@@ -586,6 +635,18 @@ pub const IoInputSrc = union(enum) {
     one: void,
     wire: DirectionalWire1x1,
     code: u5,
+
+    pub fn format(
+        self: @This(),
+        writer: *std.Io.Writer,
+    ) std.Io.Writer.Error!void {
+        switch (self) {
+            .zero => try writer.writeAll("0"),
+            .one => try writer.writeAll("1"),
+            .wire => |wire| try writer.print("{f}", .{wire}),
+            .code => |code| try writer.print("code {}", .{code}),
+        }
+    }
 };
 
 const IoInputDesc = struct {

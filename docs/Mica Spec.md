@@ -1488,7 +1488,7 @@ There are 6 block types, corresponding to 7 sections of the bitstream: BRAM data
 as part of `bram` block.
 
 Order of commands is interchangeable and does not matter, and so is the order of blocks in the file.
-However, when converting binary format to textual, global block comes first, then all the switch blocks, then tile blocks in coordinate order.
+However, when converting binary format to textual, global block comes first, then all the switch blocks, then tile blocks (except IO) in coordinate order, then IO blocks in pin order.
 
 Commands are also in well-defined order (the one in which they are defined in the grammar).
 There is also one exception, in `bram` blocks `WIDTH` setting should always come before `data {}` section.

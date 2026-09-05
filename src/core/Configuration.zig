@@ -58,7 +58,50 @@ pub const Bram = struct {
     we2: u5,
 
     pub const Data = struct {
-        data: [512]u8,
+        data: [256]u16,
+
+        pub fn get(data: *const Data, comptime T: type, addr: usize) T {
+            if (T == u16)
+                return data.data[addr];
+
+            std.debug.assert(@typeInfo(T) == .int);
+            const bit_width = @typeInfo(T).int.bits;
+            const mask: u16 = (@as(u16, 1) << bit_width) - 1;
+
+            const word_idx = (addr * bit_width) / 16;
+            const bit_idx: u4 = @intCast((addr * bit_width) % 16);
+            return @intCast((data.data[word_idx] >> bit_idx) & mask);
+        }
+
+        pub fn set(data: *Data, comptime T: type, addr: usize, x: T) void {
+            if (T == u16) {
+                data.data[addr] = x;
+                return;
+            }
+
+            std.debug.assert(@typeInfo(T) == .int);
+            const bit_width = @typeInfo(T).int.bits;
+            const mask: u16 = (@as(u16, 1) << bit_width) - 1;
+
+            const word_idx = (addr * bit_width) / 16;
+            const bit_idx: u4 = @intCast((addr * bit_width) % 16);
+
+            const old = data.data[word_idx] & ~(mask << bit_idx);
+            const new = @as(u16, x) << bit_idx;
+            data.data[word_idx] = old | new;
+        }
+
+        pub fn getChunk(
+            data: *const Data,
+            offset: usize,
+            comptime T: type,
+            comptime n: usize,
+        ) [n]T {
+            var result: [n]T = undefined;
+            for (0..n) |i|
+                result[i] = data.get(T, offset + i);
+            return result;
+        }
     };
 };
 
@@ -177,7 +220,7 @@ pub fn getIo(c: *const Configuration, tile: common.TileCoords) *Io {
             c.model.grid.tileRows() + (tile.col - 1) * 2
         else if (tile.row == c.model.grid.southIo())
             c.model.grid.tileRows() + (tile.col - 1) * 2 + 1
-        else if (tile.row == c.model.grid.eastIo())
+        else if (tile.col == c.model.grid.eastIo())
             c.model.grid.tileRows() + 2 * c.model.grid.tileCols() + (tile.row - 1)
         else
             unreachable;

@@ -4,7 +4,6 @@ const wire_codes = @import("../wire_codes.zig");
 
 pub const ValueKind = union(enum) {
     bit: void,
-    dec: type,
     bin: type,
     hex: type,
     clk: void,
