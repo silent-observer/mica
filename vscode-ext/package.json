@@ -1,0 +1,29 @@
+{
+  "name": "mica-language",
+  "displayName": "Mica language extension",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "contributes": {
+    "languages": [
+      {
+        "id": "mica",
+        "aliases": [
+          "Mica Bitstream",
+          "mica"
+        ],
+        "extensions": [
+          ".mica"
+        ]
+      }
+    ],
+    "grammars": [
+      {
+        "language": "mica",
+        "scopeName": "source.mica",
+        "path": "./syntaxes/mica.tmLanguage.json"
+      }
+    ]
+  }
+}

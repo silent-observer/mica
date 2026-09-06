@@ -1,0 +1,539 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "FPGA Bitstream",
+  "scopeName": "source.mica",
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#format-header"
+    },
+    {
+      "include": "#device-header"
+    },
+    {
+      "include": "#global-block"
+    },
+    {
+      "include": "#switch-block"
+    },
+    {
+      "include": "#logic-block"
+    },
+    {
+      "include": "#bram-block"
+    },
+    {
+      "include": "#io-block"
+    }
+  ],
+
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.mica",
+          "match": "//.*$"
+        }
+      ]
+    },
+
+    "format-header": {
+      "patterns": [
+        {
+          "name": "meta.header.format.mica",
+          "match": "\\b(format)\\s+(\\d+)\\s*(;)",
+          "captures": {
+            "1": {
+              "name": "keyword.control.format.mica"
+            },
+            "2": {
+              "name": "constant.numeric.version.mica"
+            },
+            "3": {
+              "name": "punctuation.terminator.mica"
+            }
+          }
+        }
+      ]
+    },
+
+    "device-header": {
+      "patterns": [
+        {
+          "name": "meta.header.device.mica",
+          "match": "\\b(device)\\s+(\"[^\"]*\")\\s*(;)",
+          "captures": {
+            "1": {
+              "name": "keyword.control.device.mica"
+            },
+            "2": {
+              "name": "string.quoted.double.device.mica"
+            },
+            "3": {
+              "name": "punctuation.terminator.mica"
+            }
+          }
+        }
+      ]
+    },
+
+    "global-block": {
+      "patterns": [
+        {
+          "name": "meta.block.global.mica",
+          "begin": "\\b(global)\\s*(\\{)",
+          "beginCaptures": {
+            "1": {
+              "name": "keyword.control.global.mica"
+            },
+            "2": {
+              "name": "punctuation.section.block.begin.mica"
+            }
+          },
+          "end": "(\\})",
+          "endCaptures": {
+            "1": {
+              "name": "punctuation.section.block.end.mica"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#global-assignment"
+            }
+          ]
+        }
+      ]
+    },
+
+    "global-assignment": {
+      "patterns": [
+        {
+          "name": "meta.assignment.mica",
+          "match": "\\b([A-Z][A-Z0-9_]*(?:\\[\\d+\\])?)\\s*(=)\\s*(\\d+)\\s*(;)",
+          "captures": {
+            "1": {
+              "name": "variable.language.parameter.mica"
+            },
+            "2": {
+              "name": "keyword.operator.assignment.mica"
+            },
+            "3": {
+              "name": "constant.numeric.integer.mica"
+            },
+            "4": {
+              "name": "punctuation.terminator.mica"
+            }
+          }
+        }
+      ]
+    },
+
+    "switch-block": {
+      "patterns": [
+        {
+          "name": "meta.block.switch.fpga",
+          "begin": "\\b(switch)\\s*(\\()\\s*(\\d+)\\s*(,)\\s*(\\d+)\\s*(\\))\\s*(\\{)",
+          "beginCaptures": {
+            "1": {
+              "name": "keyword.control.switch.mica"
+            },
+            "2": {
+              "name": "punctuation.definition.coordinates.begin.mica"
+            },
+            "3": {
+              "name": "constant.numeric.coordinate.x.mica"
+            },
+            "4": {
+              "name": "punctuation.separator.coordinate.mica"
+            },
+            "5": {
+              "name": "constant.numeric.coordinate.y.mica"
+            },
+            "6": {
+              "name": "punctuation.definition.coordinates.end.mica"
+            },
+            "7": {
+              "name": "punctuation.section.block.begin.mica"
+            }
+          },
+          "end": "(\\})",
+          "endCaptures": {
+            "1": {
+              "name": "punctuation.section.block.end.mica"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#routing-assignment"
+            }
+          ]
+        }
+      ]
+    },
+
+    "logic-block": {
+      "patterns": [
+        {
+          "name": "meta.block.logic.mica",
+          "begin": "\\b(logic)\\s*(\\()\\s*(\\d+)\\s*(,)\\s*(\\d+)\\s*(\\))\\s*(\\{)",
+          "beginCaptures": {
+            "1": {
+              "name": "keyword.control.logic.mica"
+            },
+            "2": {
+              "name": "punctuation.definition.coordinates.begin.mica"
+            },
+            "3": {
+              "name": "constant.numeric.coordinate.x.mica"
+            },
+            "4": {
+              "name": "punctuation.separator.coordinate.mica"
+            },
+            "5": {
+              "name": "constant.numeric.coordinate.y.mica"
+            },
+            "6": {
+              "name": "punctuation.definition.coordinates.end.mica"
+            },
+            "7": {
+              "name": "punctuation.section.block.begin.mica"
+            }
+          },
+          "end": "(\\})",
+          "endCaptures": {
+            "1": {
+              "name": "punctuation.section.block.end.mica"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#tile-assignment"
+            },
+            {
+              "include": "#logic-reg"
+            },
+            {
+              "include": "#tile-input"
+            }
+          ]
+        }
+      ]
+    },
+    "bram-block": {
+      "patterns": [
+        {
+          "name": "meta.block.bram.mica",
+          "begin": "\\b(bram)\\s*(\\()\\s*(\\d+)\\s*(,)\\s*(\\d+)\\s*(\\))\\s*(\\{)",
+          "beginCaptures": {
+            "1": {
+              "name": "keyword.control.bram.mica"
+            },
+            "2": {
+              "name": "punctuation.definition.coordinates.begin.mica"
+            },
+            "3": {
+              "name": "constant.numeric.coordinate.x.mica"
+            },
+            "4": {
+              "name": "punctuation.separator.coordinate.mica"
+            },
+            "5": {
+              "name": "constant.numeric.coordinate.y.mica"
+            },
+            "6": {
+              "name": "punctuation.definition.coordinates.end.mica"
+            },
+            "7": {
+              "name": "punctuation.section.block.begin.mica"
+            }
+          },
+          "end": "(\\})",
+          "endCaptures": {
+            "1": {
+              "name": "punctuation.section.block.end.mica"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#tile-assignment"
+            },
+            {
+              "include": "#tile-input"
+            },
+            {
+              "include": "#bram-data"
+            }
+          ]
+        }
+      ]
+    },
+    "dsp-block": {
+      "patterns": [
+        {
+          "name": "meta.block.dsp.mica",
+          "begin": "\\b(dsp)\\s*(\\()\\s*(\\d+)\\s*(,)\\s*(\\d+)\\s*(\\))\\s*(\\{)",
+          "beginCaptures": {
+            "1": {
+              "name": "keyword.control.dsp.mica"
+            },
+            "2": {
+              "name": "punctuation.definition.coordinates.begin.mica"
+            },
+            "3": {
+              "name": "constant.numeric.coordinate.x.mica"
+            },
+            "4": {
+              "name": "punctuation.separator.coordinate.mica"
+            },
+            "5": {
+              "name": "constant.numeric.coordinate.y.mica"
+            },
+            "6": {
+              "name": "punctuation.definition.coordinates.end.mica"
+            },
+            "7": {
+              "name": "punctuation.section.block.begin.mica"
+            }
+          },
+          "end": "(\\})",
+          "endCaptures": {
+            "1": {
+              "name": "punctuation.section.block.end.mica"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#tile-assignment"
+            },
+            {
+              "include": "#tile-input"
+            }
+          ]
+        }
+      ]
+    },
+    "io-block": {
+      "patterns": [
+        {
+          "name": "meta.block.io.mica",
+          "begin": "\\b(io)\\s*(\\()\\s*(\\d+)\\s*(,)\\s*(\\d+)\\s*(\\))\\s*(\\{)",
+          "beginCaptures": {
+            "1": {
+              "name": "keyword.control.io.mica"
+            },
+            "2": {
+              "name": "punctuation.definition.coordinates.begin.mica"
+            },
+            "3": {
+              "name": "constant.numeric.coordinate.x.mica"
+            },
+            "4": {
+              "name": "punctuation.separator.coordinate.mica"
+            },
+            "5": {
+              "name": "constant.numeric.coordinate.y.mica"
+            },
+            "6": {
+              "name": "punctuation.definition.coordinates.end.mica"
+            },
+            "7": {
+              "name": "punctuation.section.block.begin.mica"
+            }
+          },
+          "end": "(\\})",
+          "endCaptures": {
+            "1": {
+              "name": "punctuation.section.block.end.mica"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#tile-assignment"
+            },
+            {
+              "include": "#tile-input"
+            }
+          ]
+        }
+      ]
+    },
+    "logic-reg": {
+      "patterns": [
+        {
+          "name": "meta.block.reg.mica",
+          "begin": "\\b(reg)\\s+(\\d+)\\s*(\\{)",
+          "beginCaptures": {
+            "1": {
+              "name": "storage.type.reg.mica"
+            },
+            "2": {
+              "name": "constant.numeric.reg-index.mica"
+            },
+            "3": {
+              "name": "punctuation.section.block.begin.mica"
+            }
+          },
+          "end": "(\\})",
+          "endCaptures": {
+            "1": {
+              "name": "punctuation.section.block.end.mica"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#tile-assignment"
+            }
+          ]
+        }
+      ]
+    },
+    "bram-data": {
+      "patterns": [
+        {
+          "name": "meta.block.data.mica",
+          "begin": "\\b(data)\\s*(\\{)",
+          "beginCaptures": {
+            "1": {
+              "name": "keyword.control.data.mica"
+            },
+            "2": {
+              "name": "punctuation.section.block.begin.mica"
+            }
+          },
+          "end": "(\\})",
+          "endCaptures": {
+            "1": {
+              "name": "punctuation.section.block.end.mica"
+            }
+          },
+          "patterns": [
+            {
+              "name": "meta.data-row.mica",
+              "match": "^\\s*([0-9A-Fa-f]+)\\s*(:)\\s*((?:[0-9A-Fa-f]+\\s*)+)(;)?$",
+              "captures": {
+                "1": {
+                  "name": "constant.numeric.address.mica"
+                },
+                "2": {
+                  "name": "punctuation.separator.data.mica"
+                },
+                "3": {
+                  "name": "constant.numeric.data.mica"
+                },
+                "4": {
+                  "name": "punctuation.terminator.mica"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+
+    "tile-assignment": {
+      "patterns": [
+        {
+          "name": "meta.assignment.mica",
+          "match": "\\b([A-Z][A-Z0-9_]*)\\s*(=)\\s*(0x[0-9A-Fa-f]+|\\d+|above|A1)?\\s*(;)?",
+          "captures": {
+            "1": {
+              "name": "variable.language.parameter.mica"
+            },
+            "2": {
+              "name": "keyword.operator.assignment.mica"
+            },
+            "3": {
+              "name": "constant.numeric.value.mica"
+            },
+            "4": {
+              "name": "punctuation.terminator.mica"
+            }
+          }
+        }
+      ]
+    },
+    "tile-input": {
+      "patterns": [
+        {
+          "name": "meta.input.mica",
+          "match": "\\b(in)\\s+([A-Z][A-Z0-9_]*(?:\\[\\d+\\])?)?\\s*(=)\\s*([^; ]+)?\\s*(;)?",
+          "captures": {
+            "1": {
+              "name": "storage.type.input.mica"
+            },
+            "2": {
+              "name": "variable.other.input.mica"
+            },
+            "3": {
+              "name": "keyword.operator.assignment.mica"
+            },
+            "4": {
+              "patterns": [
+                {
+                  "include": "#routing-reference"
+                }
+              ]
+            },
+            "5": {
+              "name": "punctuation.terminator.mica"
+            }
+          }
+        }
+      ]
+    },
+
+    "routing-assignment": {
+      "patterns": [
+        {
+          "name": "meta.routing-assignment.mica",
+          "match": "^\\s*(\\S+)\\s*(=)\\s*(\\S+)?\\s*(;)?",
+          "captures": {
+            "1": {
+              "patterns": [
+                {
+                  "include": "#routing-reference"
+                }
+              ]
+            },
+            "2": {
+              "name": "keyword.operator.assignment.mica"
+            },
+            "3": {
+              "patterns": [
+                {
+                  "include": "#routing-reference"
+                }
+              ]
+            },
+            "4": {
+              "name": "punctuation.terminator.mica"
+            }
+          }
+        }
+      ]
+    },
+
+    "routing-reference": {
+      "patterns": [
+        {
+          "name": "variable.other.routing.mica",
+          "match": "\\b(?:NE|SE|SW|NW)\\.(?:ZERO|O1A|O2A|O1B|O2B|I|O|DO)(?:\\[\\d+\\])?"
+        },
+        {
+          "name": "variable.other.routing.mica",
+          "match": "\\b(?:[NESW]|[HEW][0-4])(?:\\[[UDLR]+\\])?\\.(?:L(?:1|4|16)\\[\\d+\\])"
+        },
+        {
+          "name": "variable.other.routing.mica",
+          "match": "\\b(?:O1A|O2A|O1B|O2B)"
+        },
+        {
+          "name": "constant.numeric.integer.mica",
+          "match": "\\b\\d+"
+        }
+      ]
+    }
+  }
+}
