@@ -170,6 +170,10 @@ pub const Direction = enum(u2) {
         };
     }
 
+    pub fn opposite(s: Direction) Direction {
+        return @enumFromInt(s.int() +% 2);
+    }
+
     pub fn format(
         self: @This(),
         writer: *std.Io.Writer,

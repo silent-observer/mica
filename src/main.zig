@@ -6,7 +6,7 @@ const core = @import("core");
 pub fn main(init: std.process.Init) !void {
     const text = try std.Io.Dir.cwd().readFileAlloc(
         init.io,
-        "examples/toggle.mica",
+        "examples/inverter.mica",
         init.gpa,
         .unlimited,
     );
@@ -31,7 +31,7 @@ pub fn main(init: std.process.Init) !void {
 
     try std.Io.Dir.cwd().writeFile(init.io, .{
         .data = emitted_bin,
-        .sub_path = "examples/toggle.bit",
+        .sub_path = "examples/inverter.bit",
         .flags = .{},
     });
 

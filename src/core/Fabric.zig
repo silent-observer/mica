@@ -2,6 +2,7 @@ const std = @import("std");
 const common = @import("common.zig");
 const DeviceModel = @import("DeviceModel.zig");
 const wire_codes = @import("wire_codes.zig");
+const routing = @import("routing.zig");
 
 pub const Fabric = @This();
 
@@ -152,49 +153,6 @@ const L4_TRACKS = 8;
 const L4_TRACKS_PER_SW = 2;
 const L16_TRACKS = 4;
 
-fn outgoingTrack(
-    _: *const Fabric,
-    sw: common.SwitchCoords,
-    s: common.Side,
-    class: common.WireClass,
-    local_track: usize,
-) ?u8 {
-    const n = switch (s.outDir().orientation()) {
-        .horizontal => sw.col,
-        .vertical => sw.row,
-    };
-    switch (class) {
-        .l1 => return @intCast(local_track),
-        .l4 => return @intCast(2 * (n % 4) + local_track),
-        .l16 => {
-            if (n % 4 != 0) return null;
-            return @intCast((n / 4) % 4);
-        },
-    }
-}
-
-fn incomingTrack(
-    f: *const Fabric,
-    sw: common.SwitchCoords,
-    s: common.Side,
-    class: common.WireClass,
-    local_track: usize,
-) ?u8 {
-    const start_sw = sw.move(s.outDir(), f.grid, class.len()) orelse return null;
-    const n = switch (s.inDir().orientation()) {
-        .horizontal => start_sw.col,
-        .vertical => start_sw.row,
-    };
-    switch (class) {
-        .l1 => return @intCast(local_track),
-        .l4 => return @intCast(2 * (n % 4) + local_track),
-        .l16 => {
-            if (n % 4 != 0) return null;
-            return @intCast((n / 4) % 4);
-        },
-    }
-}
-
 fn generateWires(f: *Fabric) void {
     // Prepare space
     const l1_count = f.grid.edgeCount() * L1_TRACKS * 2;
@@ -235,7 +193,7 @@ fn generateWires(f: *Fabric) void {
                     if (len == 0) continue;
 
                     for (0..local_track_count) |local_track| {
-                        const track = f.outgoingTrack(
+                        const track = routing.outgoingTrack(
                             sw0,
                             dir.side(),
                             class,
@@ -309,7 +267,7 @@ fn generateSwitches(f: *Fabric) void {
 fn generateSwitchSink(f: *Fabric, sw: common.SwitchCoords, sink: wire_codes.DirectionalWire1x1) void {
     // Switchbox codes name tracks locally (the segments starting/ending at this box);
     // wire_map is keyed by the edge track number, so both ends need translating.
-    const sink_track = f.outgoingTrack(sw, sink.side, sink.class, sink.local_track) orelse return;
+    const sink_track = routing.outgoingTrack(sw, sink.side, sink.class, sink.local_track) orelse return;
     const sink_idx = f.wire_map.get(TrackKey{
         .channel = sw.channelSide(sink.side, f.grid) orelse return,
         .class = sink.class,
@@ -338,7 +296,7 @@ fn generateSwitchSink(f: *Fabric, sw: common.SwitchCoords, sink: wire_codes.Dire
             .wire => |w| {
                 // A missing incoming segment (grid edge, or an L16 that starts
                 // elsewhere) makes the code illegal, so it gets no connection.
-                const src_track = f.incomingTrack(sw, w.side, w.class, w.local_track) orelse continue;
+                const src_track = routing.incomingTrack(sw, w.side, w.class, w.local_track, f.grid) orelse continue;
                 const src_idx = f.wire_map.get(TrackKey{
                     .channel = sw.channelSide(w.side, f.grid) orelse continue,
                     .class = w.class,

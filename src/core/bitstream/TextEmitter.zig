@@ -2,6 +2,7 @@ const std = @import("std");
 
 const common = @import("../common.zig");
 const wire_codes = @import("../wire_codes.zig");
+const routing = @import("../routing.zig");
 const Configuration = @import("../Configuration.zig");
 const DeviceModel = @import("../DeviceModel.zig");
 const text_tables = @import("text_tables.zig");
@@ -9,17 +10,204 @@ const text_tables = @import("text_tables.zig");
 const TextEmitter = @This();
 
 config: *const Configuration,
+alloc: std.mem.Allocator,
 w: std.Io.Writer.Allocating,
+
+// Segments some configured sink selects, and the boxes driving them. Code 0
+// never names a wire, so these are built purely from non-zero codes.
+read_wires: std.AutoHashMapUnmanaged(routing.WireKey, void),
+read_boxes: std.AutoHashMapUnmanaged(common.SwitchCoords, void),
 
 fn init(config: *const Configuration, alloc: std.mem.Allocator) TextEmitter {
     return .{
         .w = .init(alloc),
+        .alloc = alloc,
         .config = config,
+        .read_wires = .empty,
+        .read_boxes = .empty,
     };
+}
+
+fn deinit(e: *TextEmitter) void {
+    e.read_wires.deinit(e.alloc);
+    e.read_boxes.deinit(e.alloc);
 }
 
 fn finish(e: *TextEmitter) []const u8 {
     return e.w.toOwnedSlice() catch common.oom();
+}
+
+fn markRead(e: *TextEmitter, key: routing.WireKey) void {
+    e.read_wires.put(e.alloc, key, {}) catch common.oom();
+    e.read_boxes.put(e.alloc, key.start, {}) catch common.oom();
+}
+
+fn markChannelRead(
+    e: *TextEmitter,
+    channel: common.Channel,
+    wire: anytype,
+) void {
+    const key = routing.segmentStart(
+        channel,
+        wire.dir,
+        wire.class,
+        wire.local_track,
+        e.config.model.grid,
+    ) orelse return;
+    e.markRead(key);
+}
+
+fn collectSwitchReads(e: *TextEmitter, sw: common.SwitchCoords) void {
+    const config = e.config.getSwitch(sw);
+    if (std.meta.eql(config.*, std.mem.zeroes(Configuration.Switch)))
+        return;
+
+    var side_iter = config.sides.iterator();
+    while (side_iter.next()) |side_entry| {
+        const side = side_entry.key;
+        for (&side_entry.value.l1, 0..) |code, track|
+            e.collectSwitchSinkRead(sw, side, .l1, @intCast(track), code);
+        for (&side_entry.value.l4, 0..) |code, track|
+            e.collectSwitchSinkRead(sw, side, .l4, @intCast(track), code);
+        e.collectSwitchSinkRead(sw, side, .l16, 0, side_entry.value.l16);
+    }
+}
+
+fn collectSwitchSinkRead(
+    e: *TextEmitter,
+    sw: common.SwitchCoords,
+    side: common.Side,
+    class: common.WireClass,
+    track: u3,
+    code: u4,
+) void {
+    if (code == 0) return;
+    const src = wire_codes.decodeSwitchSink(.{
+        .side = side,
+        .class = class,
+        .dir = side.outDir(),
+        .local_track = track,
+    }, code);
+    const wire = switch (src) {
+        .wire => |w| w,
+        .out, .code => return,
+    };
+
+    // Switchbox sources are already in local numbering, so only the driving
+    // box has to be found.
+    const start = routing.incomingStart(
+        sw,
+        wire.side,
+        wire.class,
+        e.config.model.grid,
+    ) orelse return;
+    e.markRead(.{
+        .start = start,
+        .dir = wire.dir,
+        .class = wire.class,
+        .local_track = wire.local_track,
+    });
+}
+
+fn collectLogicReads(e: *TextEmitter, tile: common.TileCoords) void {
+    const config = e.config.getLogic(tile);
+    for (std.enums.values(common.LogicInput)) |in| {
+        const code = config.inputs.get(in);
+        if (code == 0) continue;
+        const wire = switch (wire_codes.decodeLogicInput(in, code)) {
+            .wire => |w| w,
+            else => continue,
+        };
+        const channel = tile.channel(wire.side, e.config.model.grid) orelse continue;
+        e.markChannelRead(channel, wire);
+    }
+}
+
+fn collectBramReads(e: *TextEmitter, tile: common.TileCoords) void {
+    const config = e.config.getBram(tile);
+    for (0..common.BramInput.TOTAL) |idx| {
+        const in = common.BramInput.fromIdx(@intCast(idx));
+        const code: u5 = switch (in) {
+            .a1 => |i| config.a1[i],
+            .a2 => |i| config.a2[i],
+            .di => |i| config.di[i],
+            .we1 => config.we1,
+            .we2 => config.we2,
+        };
+        if (code == 0) continue;
+        const wire = switch (wire_codes.decodeBramInput(in, code)) {
+            .wire => |w| w,
+            else => continue,
+        };
+        e.markChannelRead(tile.bigChannel(wire.side, e.config.model.grid), wire);
+    }
+}
+
+fn collectDspReads(e: *TextEmitter, tile: common.TileCoords) void {
+    const config = e.config.getDsp(tile);
+    for (0..common.DspInput.TOTAL) |idx| {
+        const in = common.DspInput.fromIdx(@intCast(idx));
+        const code: u5 = switch (in) {
+            .a => |i| config.a[i],
+            .b => |i| config.b[i],
+            .c => |i| config.c[i],
+            .md => config.md,
+            .ad => config.ad,
+            .we => config.we,
+        };
+        if (code == 0) continue;
+        const wire = switch (wire_codes.decodeDspInput(in, code)) {
+            .wire => |w| w,
+            else => continue,
+        };
+        e.markChannelRead(tile.bigChannel(wire.side, e.config.model.grid), wire);
+    }
+}
+
+fn collectIoReads(e: *TextEmitter, tile: common.TileCoords) void {
+    const config = e.config.getIo(tile);
+    const side = e.config.model.ioWireSide(tile);
+    for (std.enums.values(common.IoInput)) |in| {
+        const code = config.inputs.get(in);
+        if (code == 0) continue;
+        const wire = switch (wire_codes.decodeIoInput(in, side, code)) {
+            .wire => |w| w,
+            else => continue,
+        };
+        const channel = tile.channel(wire.side, e.config.model.grid) orelse continue;
+        e.markChannelRead(channel, wire);
+    }
+}
+
+fn collectReads(e: *TextEmitter) void {
+    const model = &e.config.model;
+
+    for (0..model.grid.vertexRows()) |row| {
+        for (0..model.grid.vertexCols()) |col| {
+            e.collectSwitchReads(.{
+                .row = @intCast(row),
+                .col = @intCast(col),
+            });
+        }
+    }
+
+    for (1..1 + model.grid.tileRows()) |row| {
+        for (1..1 + model.grid.tileCols()) |col| {
+            const tile = common.TileCoords{
+                .row = @intCast(row),
+                .col = @intCast(col),
+            };
+            switch (model.tileType(tile)) {
+                .inert, .io => unreachable,
+                .logic => e.collectLogicReads(tile),
+                .bram => if ((row - 1) % 4 == 0) e.collectBramReads(tile),
+                .dsp => if ((row - 1) % 4 == 0) e.collectDspReads(tile),
+            }
+        }
+    }
+
+    for (1..1 + model.tile_counts.get(.io)) |pin|
+        e.collectIoReads(model.pinCoord(pin));
 }
 
 fn emitHeader(e: *TextEmitter) !void {
@@ -35,7 +223,14 @@ fn emitSwitchSink(
     track: u3,
     code: u4,
 ) !void {
-    if (code == 0) return;
+    // A code-0 wire is parked on T[0] rather than driven by it, unless
+    // something downstream actually reads it.
+    if (code == 0 and !e.read_wires.contains(.{
+        .start = sw,
+        .dir = side.outDir(),
+        .class = class,
+        .local_track = track,
+    })) return;
     const w = &e.w.writer;
 
     const sink = wire_codes.DirectionalWire1x1{
@@ -77,7 +272,8 @@ fn emitSwitchSink(
 
 fn emitSwitchBlock(e: *TextEmitter, sw: common.SwitchCoords) !void {
     const config = e.config.getSwitch(sw);
-    if (std.meta.eql(config.*, std.mem.zeroes(Configuration.Switch)))
+    if (std.meta.eql(config.*, std.mem.zeroes(Configuration.Switch)) and
+        !e.read_boxes.contains(sw))
         return;
 
     const w = &e.w.writer;
@@ -352,6 +548,8 @@ fn emitIoBlock(e: *TextEmitter, tile: common.TileCoords) !void {
 
 pub fn emit(config: *const Configuration, alloc: std.mem.Allocator) []const u8 {
     var e = TextEmitter.init(config, alloc);
+    defer e.deinit();
+    e.collectReads();
     e.emitHeader() catch common.oom();
     e.emitGlobalBlock() catch common.oom();
 
