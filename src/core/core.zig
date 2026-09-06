@@ -8,6 +8,7 @@ pub const routing = @import("routing.zig");
 const wire_codes = @import("wire_codes.zig");
 pub const TextParser = @import("bitstream/TextParser.zig");
 pub const TextEmitter = @import("bitstream/TextEmitter.zig");
+pub const BinaryParser = @import("bitstream/BinaryParser.zig");
 pub const BinaryEmitter = @import("bitstream/BinaryEmitter.zig");
 
 test "core tests" {

@@ -1469,6 +1469,8 @@ The converter still allows to convert the file to textual format with a warning.
 The virtual "configuration memory" is zero-initialized, so this way bitstream can avoid mentioning
 zero-filled chunks of memory.
 The frame doesn't have to correspond to specific tiles, and can cover the whole section, if convenient.
+However, the frame must always *start* on tile boundary, even though it doesn't have to end on one.
+Starting mid-tile is considered malformed.
 
 Frames must be sorted by (SECTION, OFFSET), must not overlap, and must not overflow the section size.
 Bitstreams that break this are considered malformed.

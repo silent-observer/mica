@@ -13,8 +13,7 @@ pub fn main(init: std.process.Init) !void {
     defer init.gpa.free(text);
 
     const r = core.TextParser.parse(text, init.gpa);
-    defer if (r.c) |c| c.deinit(init.gpa);
-    defer if (r.err) |e| init.gpa.free(e);
+    defer r.deinit(init.gpa);
 
     if (r.err) |e| {
         std.debug.print("{s}\n", .{e});
@@ -37,6 +36,21 @@ pub fn main(init: std.process.Init) !void {
         .sub_path = "examples/inverter.bit",
         .flags = .{},
     });
+
+    const parsed = core.BinaryParser.parse(emitted_bin, init.gpa);
+    defer parsed.deinit(init.gpa);
+
+    if (parsed.err) |e| {
+        std.debug.print("{s}\n", .{e});
+        return;
+    }
+    for (parsed.warnings) |w| {
+        std.debug.print("{s}\n", .{w});
+    }
+
+    const emitted_bin2 = core.BinaryEmitter.emit(&parsed.c.?, init.gpa);
+    defer init.gpa.free(emitted_bin2);
+    std.debug.assert(std.mem.eql(u8, emitted_bin, emitted_bin2));
 
     // var f = core.Fabric.build(init.gpa, .mica1s);
     // defer f.deinit();

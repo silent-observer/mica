@@ -67,10 +67,10 @@ fn emitGlobal(e: *BinaryEmitter) !void {
 
     // 8 bits
     for (e.config.global.clk_enable) |clk_en|
-        e.frame_w.writeBit(@intFromBool(clk_en));
+        e.frame_w.write(bool, clk_en);
     // 4 bits
     for (e.config.global.rst_enable) |rst_en|
-        e.frame_w.writeBit(@intFromBool(rst_en));
+        e.frame_w.write(bool, rst_en);
     // 4 bits
     e.frame_w.write(u4, e.config.global.reserved);
 
@@ -117,20 +117,20 @@ fn emitLogicTiles(e: *BinaryEmitter) !void {
         }
 
         // 39 bits
-        e.frame_w.writeBit(@intFromBool(config.carry));
-        e.frame_w.writeBit(@intFromBool(config.mem));
-        e.frame_w.writeBit(@intFromBool(config.mem_dual));
+        e.frame_w.write(bool, config.carry);
+        e.frame_w.write(bool, config.mem);
+        e.frame_w.write(bool, config.mem_dual);
         e.frame_w.write(u2, @intFromEnum(config.cin_src));
-        e.frame_w.writeBit(@intFromBool(config.frac1));
-        e.frame_w.writeBit(@intFromBool(config.frac2));
+        e.frame_w.write(bool, config.frac1);
+        e.frame_w.write(bool, config.frac2);
         e.frame_w.write(u16, config.lut1);
         e.frame_w.write(u16, config.lut2);
 
         // 2 x 7 = 14 bits
         for (config.regs) |reg| {
-            e.frame_w.writeBit(@intFromBool(reg.reg));
+            e.frame_w.write(bool, reg.reg);
             e.frame_w.write(u3, reg.clk);
-            e.frame_w.writeBit(@intFromBool(reg.rst_en));
+            e.frame_w.write(bool, reg.rst_en);
             e.frame_w.write(u2, reg.rst);
         }
 
@@ -189,11 +189,11 @@ fn emitDspTiles(e: *BinaryEmitter) !void {
         }
 
         // 9 bits
-        e.frame_w.writeBit(@intFromBool(config.signed_a));
-        e.frame_w.writeBit(@intFromBool(config.signed_b));
-        e.frame_w.writeBit(@intFromBool(config.acc));
+        e.frame_w.write(bool, config.signed_a);
+        e.frame_w.write(bool, config.signed_b);
+        e.frame_w.write(bool, config.acc);
         e.frame_w.write(u3, config.clk);
-        e.frame_w.writeBit(@intFromBool(config.rst_en));
+        e.frame_w.write(bool, config.rst_en);
         e.frame_w.write(u2, config.rst);
 
         // 5 x 8 = 40 bits
@@ -229,12 +229,12 @@ fn emitIoTiles(e: *BinaryEmitter) !void {
         }
 
         // 10 bits
-        e.frame_w.writeBit(@intFromBool(config.reg_i));
-        e.frame_w.writeBit(@intFromBool(config.reg_o));
-        e.frame_w.writeBit(@intFromBool(config.pullup));
-        e.frame_w.writeBit(@intFromBool(config.pulldown));
+        e.frame_w.write(bool, config.reg_i);
+        e.frame_w.write(bool, config.reg_o);
+        e.frame_w.write(bool, config.pullup);
+        e.frame_w.write(bool, config.pulldown);
         e.frame_w.write(u3, config.clk);
-        e.frame_w.writeBit(@intFromBool(config.rst_en));
+        e.frame_w.write(bool, config.rst_en);
         e.frame_w.write(u2, config.rst);
 
         // 5 x 5 = 25 bits

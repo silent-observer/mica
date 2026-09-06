@@ -28,6 +28,11 @@ pub fn writeBit(w: *BitWriter, bit: u1) void {
 }
 
 pub fn write(w: *BitWriter, T: type, val: T) void {
+    if (T == bool) {
+        w.writeBit(@intFromBool(val));
+        return;
+    }
+
     std.debug.assert(@typeInfo(T) == .int);
     std.debug.assert(@typeInfo(T).int.signedness == .unsigned);
 

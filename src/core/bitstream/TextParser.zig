@@ -1070,6 +1070,13 @@ fn parseIoBlock(p: *TextParser) !void {
 pub const Result = struct {
     c: ?Configuration,
     err: ?[]const u8,
+
+    pub fn deinit(r: Result, alloc: std.mem.Allocator) void {
+        if (r.c) |c|
+            c.deinit(alloc);
+        if (r.err) |e|
+            alloc.free(e);
+    }
 };
 
 pub fn parse(input: []const u8, alloc: std.mem.Allocator) Result {

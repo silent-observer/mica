@@ -18,7 +18,7 @@ w: std.Io.Writer.Allocating,
 read_wires: std.AutoHashMapUnmanaged(routing.WireKey, void),
 read_boxes: std.AutoHashMapUnmanaged(common.SwitchCoords, void),
 
-warnings: std.ArrayListUnmanaged([]const u8),
+warnings: std.ArrayList([]const u8),
 
 pub const Result = struct {
     text: []const u8,
