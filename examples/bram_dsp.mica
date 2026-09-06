@@ -1,0 +1,79 @@
+format 1;
+device "M1/S";
+
+global {
+    CLK_PIN_ENABLE[3] = 1;
+    RST_PIN_ENABLE[1] = 1;
+    RESERVED = 0b1010;
+}
+
+switch (24, 37) {
+    E.L1[0] = NW.O1B;
+    E.L1[3] = NW.O1A;
+}
+
+switch (25, 37) {
+    N.L1[1] = NW.O1B;
+}
+
+logic (1, 8) {
+    CARRY = 1;
+    MEM = 1;
+    MEM_DUAL = 1;
+    CIN_SRC = above;
+    FRAC1 = 1;
+    FRAC2 = 1;
+    LUT1 = 0x00FF;
+    LUT2 = 0xDEAD;
+    reg 1 {
+        REG = 1;
+        CLK = CLK5;
+        RST_EN = 1;
+        RST = RST2;
+    }
+    reg 2 {
+        CLK = CLK7;
+    }
+    in CE2 = 1;
+}
+
+dsp (5, 18) {
+    SIGNED_A = 1;
+    SIGNED_B = 1;
+    ACC = 1;
+    CLK = CLK1;
+    RST_EN = 1;
+    RST = RST3;
+    in A[0] = 1;
+    in B[7] = 1;
+    in C[15] = 1;
+    in MD = 1;
+    in AD = 1;
+    in WE = 1;
+}
+
+bram (25, 38) {
+    WIDTH = 8;
+    CLK = CLK3;
+    data {
+        000: 77 24 5D 6D 2E 6B 7B 25;
+        008: 7F 6F 00 00 00 00 00 00;
+    }
+    in A1[0] = H0[R].L1[0];
+    in A1[1] = H0[R].L1[3];
+    in DI[0] = W0[U].L1[1];
+    in WE1 = 1;
+}
+
+io (0, 4) {
+    REG_I = 1;
+    REG_O = 1;
+    PULLUP = 1;
+    CLK = CLK2;
+    RST_EN = 1;
+    RST = RST1;
+    in IE = 1;
+    in OE = 1;
+    in EE = 1;
+}
+

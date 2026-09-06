@@ -395,7 +395,15 @@ fn emitCommands(
                     @field(t.*, config_field)[index]
                 else
                     @field(t.*, config_field);
-                if (std.meta.eql(v, std.mem.zeroes(@TypeOf(v))))
+
+                // WIDTH has to precede `data {}` (§"Textual format"), so a
+                // width of 1 - which encodes as 0 - is written out anyway when
+                // the tile has data that it decides how to read.
+                const zero_is_meaningful = if (value_kind == .width)
+                    !std.mem.allEqual(u16, &e.config.getBramData(tile).data, 0)
+                else
+                    false;
+                if (!zero_is_meaningful and std.meta.eql(v, std.mem.zeroes(@TypeOf(v))))
                     continue;
 
                 try w.writeAll(indent ++ "    " ++ expected_word);

@@ -1,21 +1,22 @@
 format 1;
 device "M1/S";
 
-switch (0,2) {
-    W.L1[0] = NW.I;
+switch (0, 2) {
     E.L1[0] = SW.O1A;
+    W.L1[0] = NW.I;
 }
 
-logic (1,2) {
+logic (1, 2) {
     LUT1 = 0xFF00;
     in A1 = N[L].L1[0];
 }
 
-io (0,2) {
+io (0, 2) {
     PULLDOWN = 1;
 }
 
-io (0,3) {
+io (0, 3) {
     in O = S[R].L1[0];
     in E = 1;
 }
+

@@ -1654,8 +1654,9 @@ sits as the north-west neighbour, so it is `T[0]`. Driving the outgoing L1 track
 **west** side (`s = 3`) with code `0` selects `T[0].O[(0+3+0) mod 4] = T[0].O[3]`, and an IO tile
 presents `I` on all four of `O[0..3]`. That wire runs west along the north edge of logic tile
 `(1,2)`, which reads it on input `A1`: `A1`'s primary side is N with even parity, its even-parity
-L1 tracks are `{0,2,4}`, and the wire travels counter-clockwise (west) along a north edge, so it is
-the first of the CCW L1 codes, **code 9**.
+L1 tracks are `{0,2,4}`, and the wire travels counter-clockwise (west) along a north edge. Codes
+`6..14` are the primary side clockwise and `15..23` the same window counter-clockwise, and `L1[0]`
+is index `0` of the canonical order, so it is **code 15**.
 
 `B1`, `C1` and `D1` are tied to constant `0` (code `0`), so the LUT index reduces to `8*A1`. A LUT
 that inverts `A1` is `1` for `ABCD = 0000..0111` and `0` for `1000..1111`; written from `0000`
@@ -1663,9 +1664,10 @@ upward and stored MSB-first, that is `LUT1 = 0xFF00`.
 
 The result leaves on `O1A`. At the same switchbox the logic tile is the south-west neighbour,
 `T[3]`, so driving the outgoing L1 track 0 on the **east** side (`s = 1`) with code `3` selects
-`T[3].O[(0+1+3) mod 4] = T[3].O[0] = O1A`. The output tile reads that wire clockwise... it runs
-east along a south edge, which is counter-clockwise for that tile, so **code 5**, and its `E` input
-is tied to constant `1` so the output driver is enabled.
+`T[3].O[(0+1+3) mod 4] = T[3].O[0] = O1A`. The output tile reads that wire on `O`, which has even
+parity and `d = 0`: it runs east along a south edge, which is counter-clockwise for that tile, and
+`2..10` is the clockwise window against `11..19` counter-clockwise, so **code 11**. Its `E` input is
+tied to constant `1` so the output driver is enabled.
 
 `PULLDOWN` is set on the input tile: with no external driver the pin would otherwise read `X`.
 
@@ -1676,8 +1678,8 @@ format 1;
 device "M1/S";
 
 switch (0, 2) {
-    W.L1[0] = NW.I;
     E.L1[0] = SW.O1A;
+    W.L1[0] = NW.I;
 }
 
 logic (1, 2) {
@@ -1705,26 +1707,31 @@ are skipped. The tie-off is real, it is simply the default.
 below its nibble really is zero; the textual form carries information the binary does not.
 
 **Binary bitstream.** Indices: switchbox `(0,2)` is `0 + 2*49 = 98`, logic `(1,2)` is
-`0 + 1*48 = 48`, and the north IO tiles are `48 + 1*2 = 50` and `48 + 2*2 = 52`. The two IO tiles
-are emitted as a single frame spanning indices 50..52, which also covers the untouched south tile
-at index 51: one 105-bit frame costs 23 bytes against 28 for two 35-bit frames.
+`0 + 1*48 = 48`, and the north IO tiles of columns 2 and 3 are `48 + 1*2 = 50` and `48 + 2*2 = 52`.
 
 | Section | Offset (bits) | Size (bits) | Covers                         |
 |---------|---------------|-------------|--------------------------------|
 | `1`     | `14112`       | `144`       | switchbox `(0,2)`              |
 | `2`     | `4944`        | `103`       | logic `(1,2)`                  |
-| `5`     | `1750`        | `105`       | IO indices 50..52              |
+| `5`     | `1750`        | `35`        | IO index 50, tile `(0,2)`      |
+| `5`     | `1820`        | `35`        | IO index 52, tile `(0,3)`      |
+
+The two IO tiles are one index apart, and a frame may legally span both - index 51 is the untouched
+south tile of column 2, and a single 105-bit frame covering 50..52 costs 23 bytes against 28 for
+two 35-bit frames. Nothing requires that, and the converter here takes the simpler rule of ending a
+frame wherever a tile is zero-filled.
 
 ```
-0000  4d 49 43 41 e9 44 e3 58 00 00 00 01 4d 31 2f 53
-0010  00 00 00 03 01 00 00 37 20 00 00 00 90 00 00 00
+0000  4d 49 43 41 cd da 80 40 00 00 00 01 4d 31 2f 53
+0010  00 00 00 04 01 00 00 37 20 00 00 00 90 00 00 00
 0020  00 03 00 00 00 00 00 00 00 00 00 00 00 00 00 02
-0030  00 00 13 50 00 00 00 67 00 07 f8 00 00 00 02 40
-0040  00 00 00 00 00 05 00 00 06 d6 00 00 00 69 10 00
-0050  00 00 00 00 00 00 00 00 28 40 00 00
+0030  00 00 13 50 00 00 00 67 01 fe 00 00 00 00 03 c0
+0040  00 00 00 00 00 05 00 00 06 d6 00 00 00 23 10 00
+0050  00 00 00 05 00 00 07 1c 00 00 00 23 00 16 10 00
+0060  00
 ```
 
-92 bytes, against a configuration memory of 962720 bits for this device. That ratio is the whole
+97 bytes, against a configuration memory of 962720 bits for this device. That ratio is the whole
 point of the sparse-frame design.
 
 ### Example 2 - registered toggle
@@ -1773,12 +1780,12 @@ io (0, 3) {
 | `5`     | `1820`        | `35`        | IO index 52                    |
 
 ```
-0000  4d 49 43 41 42 6c 77 3d 00 00 00 01 4d 31 2f 53
+0000  4d 49 43 41 1f 84 9a 43 00 00 00 01 4d 31 2f 53
 0010  00 00 00 04 00 00 00 00 00 00 00 00 10 80 00 01
 0020  00 00 37 20 00 00 00 90 00 00 00 00 03 00 00 00
 0030  00 00 00 00 00 00 00 00 00 00 02 00 00 13 50 00
-0040  00 00 67 04 07 f8 00 00 00 00 80 00 04 00 00 00
-0050  05 00 00 07 1c 00 00 00 23 00 0a 10 00 00
+0040  00 00 67 01 fe 00 00 01 00 00 80 00 04 00 00 00
+0050  05 00 00 07 1c 00 00 00 23 00 16 10 00 00
 ```
 
 94 bytes. Frames are sorted by `(SECTION, OFFSET)`, non-overlapping and in range, as required.
