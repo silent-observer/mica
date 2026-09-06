@@ -1061,7 +1061,7 @@ test "resolveSwitchSink flags wires missing at a grid corner" {
     for (expected, 0..) |tag, code| {
         try std.testing.expectEqual(
             tag,
-            resolveSwitchSink(sw, sink, @intCast(code), mica1s_grid),
+            std.meta.activeTag(resolveSwitchSink(sw, sink, @intCast(code), mica1s_grid)),
         );
     }
 }
