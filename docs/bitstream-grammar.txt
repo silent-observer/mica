@@ -60,7 +60,7 @@ Switch = 'switch' CellCoordinates '{' SwitchCommand* '}'
 SwitchCommand = SwitchDst '=' SwitchSrc ';'
 
 SwitchDst = NonDirectionalWire
-SwitchSrc = NonDirectionalWire | SwitchTileOutput
+SwitchSrc = NonDirectionalWire | SwitchTileOutput | UnknownSrc4
 
 SwitchTileOutput = Corner '.' SwitchOutputName
 SwitchOutputName =

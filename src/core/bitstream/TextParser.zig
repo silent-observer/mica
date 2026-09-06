@@ -381,7 +381,11 @@ fn parseSwitchBlock(p: *TextParser) !void {
         try p.expect('=');
 
         const source_word = try p.parseWord();
-        const source = if (sides.get(source_word)) |source_side| blk: {
+        const source = if (std.mem.eql(u8, source_word, "code")) blk: {
+            const raw = try p.parseNumber(u4);
+            try p.expect(';');
+            break :blk wire_codes.SwitchSinkSrc{ .code = raw };
+        } else if (sides.get(source_word)) |source_side| blk: {
             try p.expect('.');
             const source_class_word = try p.parseWord();
             const source_class = classes.get(source_class_word) orelse

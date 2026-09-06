@@ -1,5 +1,6 @@
 const std = @import("std");
 const common = @import("common.zig");
+const routing = @import("routing.zig");
 
 pub const LogicOutput = enum(u2) {
     o1a = 0,
@@ -221,6 +222,7 @@ pub fn decodeLogicInput(in: common.LogicInput, code: u5) LogicInputSrc {
 }
 
 pub fn encodeLogicInput(in: common.LogicInput, src: LogicInputSrc) ?u5 {
+    if (src == .code) return src.code;
     for (0..32) |i| {
         const code: u5 = @intCast(i);
         if (std.meta.eql(decodeLogicInput(in, code), src))
@@ -402,6 +404,7 @@ pub fn decodeBramInput(in: common.BramInput, code: u5) BramInputSrc {
 }
 
 pub fn encodeBramInput(in: common.BramInput, src: BramInputSrc) ?u5 {
+    if (src == .code) return src.code;
     const code_count: usize = switch (in) {
         .a1, .a2, .di => 16,
         .we1, .we2 => 32,
@@ -622,6 +625,7 @@ pub fn decodeDspInput(in: common.DspInput, code: u5) DspInputSrc {
 }
 
 pub fn encodeDspInput(in: common.DspInput, src: DspInputSrc) ?u5 {
+    if (src == .code) return src.code;
     for (0..32) |i| {
         const code: u5 = @intCast(i);
         if (std.meta.eql(decodeDspInput(in, code), src))
@@ -702,6 +706,7 @@ pub fn decodeIoInput(in: common.IoInput, side: common.Side, code: u5) IoInputSrc
 }
 
 pub fn encodeIoInput(in: common.IoInput, side: common.Side, src: IoInputSrc) ?u5 {
+    if (src == .code) return src.code;
     for (0..32) |i| {
         const code: u5 = @intCast(i);
         if (std.meta.eql(decodeIoInput(in, side, code), src))
@@ -827,6 +832,7 @@ pub fn decodeSwitchSink(sink: DirectionalWire1x1, code: u4) SwitchSinkSrc {
 }
 
 pub fn encodeSwitchSink(sink: DirectionalWire1x1, src: SwitchSinkSrc) ?u4 {
+    if (src == .code) return src.code;
     for (0..16) |i| {
         const code: u4 = @intCast(i);
         var decoded = decodeSwitchSink(sink, code);
@@ -839,6 +845,109 @@ pub fn encodeSwitchSink(sink: DirectionalWire1x1, src: SwitchSinkSrc) ?u4 {
             return code;
     }
     return null;
+}
+
+// The decoders above are pure: every code names something, whether or not it
+// exists at a given location. The resolvers below add that geometry, replacing
+// a name that would be a lie with the raw code.
+
+/// Whether `channel` exists and carries the segment `wire` names. Takes either
+/// wire flavour, since only the fields they share are relevant.
+fn channelHasWire(
+    channel: ?common.Channel,
+    wire: anytype,
+    grid: common.GridSize,
+) bool {
+    const c = channel orelse return false;
+    return routing.segmentStart(c, wire.dir, wire.class, wire.local_track, grid) != null;
+}
+
+pub fn resolveSwitchSink(
+    sw: common.SwitchCoords,
+    sink: DirectionalWire1x1,
+    code: u4,
+    grid: common.GridSize,
+) SwitchSinkSrc {
+    const src = decodeSwitchSink(sink, code);
+    const wire = switch (src) {
+        .wire => |w| w,
+        .out, .code => return src,
+    };
+
+    // A switchbox only reaches the segments that start and end at it, so
+    // existence is decided by whether the driving box is on the grid.
+    if (routing.incomingTrack(sw, wire.side, wire.class, wire.local_track, grid) == null)
+        return .{ .code = code };
+    return src;
+}
+
+pub fn resolveLogicInput(
+    tile: common.TileCoords,
+    in: common.LogicInput,
+    code: u5,
+    grid: common.GridSize,
+) LogicInputSrc {
+    const src = decodeLogicInput(in, code);
+    const wire = switch (src) {
+        .wire => |w| w,
+        else => return src,
+    };
+
+    if (!channelHasWire(tile.channel(wire.side, grid), wire, grid))
+        return .{ .code = code };
+    return src;
+}
+
+pub fn resolveIoInput(
+    tile: common.TileCoords,
+    in: common.IoInput,
+    side: common.Side,
+    code: u5,
+    grid: common.GridSize,
+) IoInputSrc {
+    const src = decodeIoInput(in, side, code);
+    const wire = switch (src) {
+        .wire => |w| w,
+        else => return src,
+    };
+
+    if (!channelHasWire(tile.channel(wire.side, grid), wire, grid))
+        return .{ .code = code };
+    return src;
+}
+
+pub fn resolveBramInput(
+    tile: common.TileCoords,
+    in: common.BramInput,
+    code: u5,
+    grid: common.GridSize,
+) BramInputSrc {
+    const src = decodeBramInput(in, code);
+    const wire = switch (src) {
+        .wire => |w| w,
+        else => return src,
+    };
+
+    if (!channelHasWire(tile.bigChannel(wire.side, grid), wire, grid))
+        return .{ .code = code };
+    return src;
+}
+
+pub fn resolveDspInput(
+    tile: common.TileCoords,
+    in: common.DspInput,
+    code: u5,
+    grid: common.GridSize,
+) DspInputSrc {
+    const src = decodeDspInput(in, code);
+    const wire = switch (src) {
+        .wire => |w| w,
+        else => return src,
+    };
+
+    if (!channelHasWire(tile.bigChannel(wire.side, grid), wire, grid))
+        return .{ .code = code };
+    return src;
 }
 
 test "encode is the inverse of decode" {
@@ -914,4 +1023,89 @@ test "encode is the inverse of decode" {
             }
         }
     }
+}
+
+const mica1s_grid = common.GridSize{ .rows = 50, .cols = 66 };
+
+test "resolveSwitchSink flags wires missing at a grid corner" {
+    // At (0,0) nothing arrives from the north or the west.
+    const sw = common.SwitchCoords{ .row = 0, .col = 0 };
+    const sink = DirectionalWire1x1{
+        .side = .n,
+        .dir = common.Side.n.outDir(),
+        .class = .l1,
+        .local_track = 0,
+    };
+
+    // str = S, lft = W, rgt = E.
+    const expected = [16]std.meta.Tag(SwitchSinkSrc){
+        .out,  .out,  .out,  .out, // tile outputs always name something
+        .wire, .code, .wire, // L1 str / lft / rgt
+        .wire, .wire, // L4 str
+        .code, .code, // L4 lft
+        .wire, .wire, // L4 rgt
+        .wire, .code, .wire, // L16 str / lft / rgt
+    };
+
+    for (expected, 0..) |tag, code| {
+        try std.testing.expectEqual(
+            tag,
+            resolveSwitchSink(sw, sink, @intCast(code), mica1s_grid),
+        );
+    }
+}
+
+test "resolveSwitchSink is transparent in the interior" {
+    // (24,32) is on-phase for L16 on every side.
+    const sw = common.SwitchCoords{ .row = 24, .col = 32 };
+    for (std.enums.values(common.Side)) |side| {
+        for (std.enums.values(common.WireClass)) |class| {
+            const local_track_count: u8 = switch (class) {
+                .l1 => 6,
+                .l4 => 2,
+                .l16 => 1,
+            };
+            for (0..local_track_count) |local_track| {
+                const sink = DirectionalWire1x1{
+                    .side = side,
+                    .dir = side.outDir(),
+                    .class = class,
+                    .local_track = @intCast(local_track),
+                };
+                for (0..16) |i| {
+                    const code: u4 = @intCast(i);
+                    try std.testing.expectEqual(
+                        decodeSwitchSink(sink, code),
+                        resolveSwitchSink(sw, sink, code, mica1s_grid),
+                    );
+                }
+            }
+        }
+    }
+}
+
+test "resolveLogicInput flags an L4 truncated past the grid corner" {
+    const tile = common.TileCoords{ .row = 1, .col = 1 };
+
+    // Code 7 is N[R].L4[0], whose segment starts at switchbox (0,0).
+    try std.testing.expectEqual(
+        decodeLogicInput(.a1, 7),
+        resolveLogicInput(tile, .a1, 7, mica1s_grid),
+    );
+
+    // Code 10 is N[R].L4[2], which would have to start three boxes further west.
+    try std.testing.expectEqual(
+        LogicInputSrc{ .code = 10 },
+        resolveLogicInput(tile, .a1, 10, mica1s_grid),
+    );
+
+    // Constants and local outputs are never geometric.
+    try std.testing.expectEqual(
+        LogicInputSrc.zero,
+        resolveLogicInput(tile, .a1, 0, mica1s_grid),
+    );
+    try std.testing.expectEqual(
+        LogicInputSrc{ .local = .o1a },
+        resolveLogicInput(tile, .a1, 2, mica1s_grid),
+    );
 }

@@ -22,9 +22,12 @@ pub fn main(init: std.process.Init) !void {
     }
 
     const emitted = core.TextEmitter.emit(&r.c.?, init.gpa);
-    defer init.gpa.free(emitted);
+    defer emitted.deinit(init.gpa);
 
-    std.debug.print("{s}", .{emitted});
+    for (emitted.warnings) |warning|
+        std.debug.print("error: {s}\n", .{warning});
+
+    std.debug.print("{s}", .{emitted.text});
 
     const emitted_bin = core.BinaryEmitter.emit(&r.c.?, init.gpa);
     defer init.gpa.free(emitted_bin);

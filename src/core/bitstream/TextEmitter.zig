@@ -18,6 +18,20 @@ w: std.Io.Writer.Allocating,
 read_wires: std.AutoHashMapUnmanaged(routing.WireKey, void),
 read_boxes: std.AutoHashMapUnmanaged(common.SwitchCoords, void),
 
+warnings: std.ArrayListUnmanaged([]const u8),
+
+pub const Result = struct {
+    text: []const u8,
+    warnings: []const []const u8,
+
+    pub fn deinit(r: Result, alloc: std.mem.Allocator) void {
+        alloc.free(r.text);
+        for (r.warnings) |warning|
+            alloc.free(warning);
+        alloc.free(r.warnings);
+    }
+};
+
 fn init(config: *const Configuration, alloc: std.mem.Allocator) TextEmitter {
     return .{
         .w = .init(alloc),
@@ -25,6 +39,7 @@ fn init(config: *const Configuration, alloc: std.mem.Allocator) TextEmitter {
         .config = config,
         .read_wires = .empty,
         .read_boxes = .empty,
+        .warnings = .empty,
     };
 }
 
@@ -35,6 +50,14 @@ fn deinit(e: *TextEmitter) void {
 
 fn finish(e: *TextEmitter) []const u8 {
     return e.w.toOwnedSlice() catch common.oom();
+}
+
+/// Records a problem with the configuration without abandoning the conversion:
+/// the spec guarantees every binary bitstream has a textual form, however
+/// broken the configuration it describes.
+fn warn(e: *TextEmitter, comptime fmt: []const u8, args: anytype) void {
+    const msg = std.fmt.allocPrint(e.alloc, fmt, args) catch common.oom();
+    e.warnings.append(e.alloc, msg) catch common.oom();
 }
 
 fn markRead(e: *TextEmitter, key: routing.WireKey) void {
@@ -239,7 +262,12 @@ fn emitSwitchSink(
         .dir = side.outDir(),
         .local_track = track,
     };
-    const src = wire_codes.decodeSwitchSink(sink, code);
+    const src = wire_codes.resolveSwitchSink(sw, sink, code, e.config.model.grid);
+    if (src == .code)
+        e.warn(
+            "switch ({},{}) {f}.{f}[{}]: code {} names a wire that does not exist here",
+            .{ sw.row, sw.col, side, class, track, code },
+        );
 
     try w.print("    {f}.{f}[{}] = ", .{ side, class, track });
 
@@ -264,7 +292,7 @@ fn emitSwitchSink(
                 .io => try w.writeAll("I"),
             }
         },
-        .wire => |wire| try w.print("{f}", .{wire}),
+        .wire => |wire| try w.print("{f}.{f}[{}]", .{ wire.side, wire.class, wire.local_track }),
         .code => |c| try w.print("code {}", .{c}),
     }
     try w.writeAll(";\n");
@@ -438,16 +466,38 @@ fn emitCommands(
                 try w.print("[{}]", .{index});
             try w.writeAll(" = ");
 
-            const src = if (Input == common.LogicInput)
-                wire_codes.decodeLogicInput(in, code)
+            const grid = e.config.model.grid;
+            const block_name = if (Input == common.LogicInput)
+                "logic"
             else if (Input == common.BramInput)
-                wire_codes.decodeBramInput(in, code)
+                "bram"
             else if (Input == common.DspInput)
-                wire_codes.decodeDspInput(in, code)
+                "dsp"
             else if (Input == common.IoInput)
-                wire_codes.decodeIoInput(in, e.config.model.ioWireSide(tile), code)
+                "io"
             else
-                @panic("Incorrect Input type");
+                @compileError("Incorrect Input type");
+
+            const src = if (Input == common.LogicInput)
+                wire_codes.resolveLogicInput(tile, in, code, grid)
+            else if (Input == common.BramInput)
+                wire_codes.resolveBramInput(tile, in, code, grid)
+            else if (Input == common.DspInput)
+                wire_codes.resolveDspInput(tile, in, code, grid)
+            else
+                wire_codes.resolveIoInput(
+                    tile,
+                    in,
+                    e.config.model.ioWireSide(tile),
+                    code,
+                    grid,
+                );
+
+            if (src == .code)
+                e.warn(
+                    block_name ++ " ({},{}) in {f}: code {} names a wire that does not exist here",
+                    .{ tile.row, tile.col, in, code },
+                );
 
             try w.print("{f};\n", .{src});
         }
@@ -546,7 +596,7 @@ fn emitIoBlock(e: *TextEmitter, tile: common.TileCoords) !void {
     try w.writeAll("\n");
 }
 
-pub fn emit(config: *const Configuration, alloc: std.mem.Allocator) []const u8 {
+pub fn emit(config: *const Configuration, alloc: std.mem.Allocator) Result {
     var e = TextEmitter.init(config, alloc);
     defer e.deinit();
     e.collectReads();
@@ -583,5 +633,8 @@ pub fn emit(config: *const Configuration, alloc: std.mem.Allocator) []const u8 {
         e.emitIoBlock(tile) catch common.oom();
     }
 
-    return e.finish();
+    return .{
+        .text = e.finish(),
+        .warnings = e.warnings.toOwnedSlice(e.alloc) catch common.oom(),
+    };
 }
