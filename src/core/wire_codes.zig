@@ -108,6 +108,17 @@ fn window4(
     };
 }
 
+/// Shared by the four tile-input source unions: all of them have `zero`, `one`
+/// and `code`, and their remaining payloads all format themselves.
+fn formatInputSrc(self: anytype, writer: *std.Io.Writer) std.Io.Writer.Error!void {
+    switch (self) {
+        .zero => try writer.writeAll("0"),
+        .one => try writer.writeAll("1"),
+        .code => |code| try writer.print("code {}", .{code}),
+        inline else => |payload| try writer.print("{f}", .{payload}),
+    }
+}
+
 pub const LogicInputSrc = union(enum) {
     zero: void,
     one: void,
@@ -119,13 +130,7 @@ pub const LogicInputSrc = union(enum) {
         self: @This(),
         writer: *std.Io.Writer,
     ) std.Io.Writer.Error!void {
-        switch (self) {
-            .zero => try writer.writeAll("0"),
-            .one => try writer.writeAll("1"),
-            .local => |lo| try writer.print("{f}", .{lo}),
-            .wire => |wire| try writer.print("{f}", .{wire}),
-            .code => |code| try writer.print("code {}", .{code}),
-        }
+        return formatInputSrc(self, writer);
     }
 };
 
@@ -148,6 +153,20 @@ const logic_inputs: std.EnumArray(common.LogicInput, LogicInputDesc) = .init(.{
     .ce2 = LogicInputDesc{ .parity = 1, .primary = null },
 });
 
+/// Code ranges of §"Logic tile inputs". Each switch below must tile [0, end),
+/// which the compiler checks.
+const logic_abcd_codes = struct {
+    const primary = 6; // 18: 9 CW then 9 CCW
+    const secondary = 24; // 8
+    const end = 32;
+};
+
+const logic_ce_codes = struct {
+    const cw = 4; // 16: 4 per side, NESW
+    const ccw = 20; // 12: 3 per side, NESW
+    const end = 32;
+};
+
 pub fn decodeLogicInput(in: common.LogicInput, code: u5) LogicInputSrc {
     const desc = logic_inputs.get(in);
     switch (in) {
@@ -159,9 +178,8 @@ pub fn decodeLogicInput(in: common.LogicInput, code: u5) LogicInputSrc {
             4 => return .{ .local = .o2a },
             5 => return .{ .local = .o2b },
 
-            // Primary
-            6...23 => {
-                const k = code - 6; // 0..17
+            logic_abcd_codes.primary...logic_abcd_codes.secondary - 1 => {
+                const k = code - logic_abcd_codes.primary; // 0..17
                 const to = ([2]common.TurnOrientation{ .cw, .ccw })[k / 9];
                 const idx = k % 9;
                 return .{ .wire = window1(
@@ -173,15 +191,14 @@ pub fn decodeLogicInput(in: common.LogicInput, code: u5) LogicInputSrc {
                 ) };
             },
 
-            // Secondary
-            24...31 => {
+            logic_abcd_codes.secondary...logic_abcd_codes.end - 1 => {
                 const side = desc.primary.?.opposite();
                 const parity = 1 - desc.parity;
                 const dir = switch (desc.parity) {
                     0 => side.turnDir(.cw),
                     1 => side.turnDir(.ccw),
                 };
-                const idx = code - 24;
+                const idx = code - logic_abcd_codes.secondary;
                 return .{ .wire = window1(side, dir, parity, 1, idx) };
             },
         },
@@ -191,9 +208,8 @@ pub fn decodeLogicInput(in: common.LogicInput, code: u5) LogicInputSrc {
             2 => return .{ .local = .o1b },
             3 => return .{ .local = .o2b },
 
-            // CW
-            4...19 => {
-                const k = code - 4; // 0...15
+            logic_ce_codes.cw...logic_ce_codes.ccw - 1 => {
+                const k = code - logic_ce_codes.cw; // 0..15
                 const side = ([4]common.Side{ .n, .e, .s, .w })[k / 4];
                 const idx = k % 4;
                 return .{ .wire = window1(
@@ -204,9 +220,8 @@ pub fn decodeLogicInput(in: common.LogicInput, code: u5) LogicInputSrc {
                     idx,
                 ) };
             },
-            // CCW
-            20...31 => {
-                const k = code - 20; // 0...11
+            logic_ce_codes.ccw...logic_ce_codes.end - 1 => {
+                const k = code - logic_ce_codes.ccw; // 0..11
                 const side = ([4]common.Side{ .n, .e, .s, .w })[k / 3];
                 const idx = k % 3;
                 return .{ .wire = window1(
@@ -241,12 +256,7 @@ pub const BramInputSrc = union(enum) {
         self: @This(),
         writer: *std.Io.Writer,
     ) std.Io.Writer.Error!void {
-        switch (self) {
-            .zero => try writer.writeAll("0"),
-            .one => try writer.writeAll("1"),
-            .wire => |wire| try writer.print("{f}", .{wire}),
-            .code => |code| try writer.print("code {}", .{code}),
-        }
+        return formatInputSrc(self, writer);
     }
 };
 
@@ -344,6 +354,20 @@ const bram_inputs: [common.BramInput.TOTAL]BramInputDesc = blk: {
     break :blk t;
 };
 
+/// Code ranges of the address/data rows in §"Block RAM inputs". These are
+/// 4-bit fields, so a valid bitstream never reaches past `end`.
+const bram_slot_codes = struct {
+    const primary = 2; // 9
+    const secondary = 11; // 5
+    const end = 16;
+};
+
+/// Shared by BRAM write enables and DSP MD/AD/WE: H1/H2/H3, west then east.
+const internal_edge_codes = struct {
+    const edges = 2; // 30: 3 edges x 2 directions x 5
+    const end = 32;
+};
+
 pub fn decodeBramInput(in: common.BramInput, code: u5) BramInputSrc {
     switch (in) {
         .a1, .a2, .di => {
@@ -354,11 +378,10 @@ pub fn decodeBramInput(in: common.BramInput, code: u5) BramInputSrc {
                 0 => return .zero,
                 1 => return .one,
 
-                // Primary
-                2...10 => {
+                bram_slot_codes.primary...bram_slot_codes.secondary - 1 => {
                     const to: common.TurnOrientation = if (x == 0) .cw else .ccw;
                     const dir = desc.edge.side().?.turnDir(to);
-                    const idx = code - 2; // 0..8
+                    const idx = code - bram_slot_codes.primary; // 0..8
 
                     return .{ .wire = window4(
                         desc.edge,
@@ -369,10 +392,9 @@ pub fn decodeBramInput(in: common.BramInput, code: u5) BramInputSrc {
                     ) };
                 },
 
-                // Secondary
-                11...15 => {
+                bram_slot_codes.secondary...bram_slot_codes.end - 1 => {
                     const dir: common.Direction = if (x == 0) .left else .right;
-                    const idx = code - 11; // 0..4
+                    const idx = code - bram_slot_codes.secondary; // 0..4
 
                     return .{ .wire = window4(
                         desc.secondary,
@@ -382,16 +404,15 @@ pub fn decodeBramInput(in: common.BramInput, code: u5) BramInputSrc {
                         idx,
                     ) };
                 },
-                16...31 => @panic("BRAM A1,B1,DI codes are 4 bits!"),
+                bram_slot_codes.end...31 => @panic("BRAM A1,B1,DI codes are 4 bits!"),
             }
         },
         .we1, .we2 => switch (code) {
             0 => return .zero,
             1 => return .one,
 
-            // Primary
-            2...31 => {
-                const k = code - 2; // 0..29
+            internal_edge_codes.edges...internal_edge_codes.end - 1 => {
+                const k = code - internal_edge_codes.edges; // 0..29
                 const side = ([3]common.BigEdge{ .h1, .h2, .h3 })[k / 10];
                 const dir: common.Direction = if ((k % 10) < 5) .left else .right;
                 const j = k % 5;
@@ -427,12 +448,7 @@ pub const DspInputSrc = union(enum) {
         self: @This(),
         writer: *std.Io.Writer,
     ) std.Io.Writer.Error!void {
-        switch (self) {
-            .zero => try writer.writeAll("0"),
-            .one => try writer.writeAll("1"),
-            .wire => |wire| try writer.print("{f}", .{wire}),
-            .code => |code| try writer.print("code {}", .{code}),
-        }
+        return formatInputSrc(self, writer);
     }
 };
 
@@ -567,6 +583,13 @@ const dsp_inputs: [common.DspInput.TOTAL]DspInputDesc = blk: {
     break :blk t;
 };
 
+/// Code ranges of the A/B/C rows in §"DSP inputs".
+const dsp_abc_codes = struct {
+    const primary = 2; // 18: 9 CW then 9 CCW
+    const secondary = 20; // 12: 6 west then 6 east
+    const end = 32;
+};
+
 pub fn decodeDspInput(in: common.DspInput, code: u5) DspInputSrc {
     switch (in) {
         .a, .b, .c => {
@@ -575,9 +598,8 @@ pub fn decodeDspInput(in: common.DspInput, code: u5) DspInputSrc {
                 0 => return .zero,
                 1 => return .one,
 
-                // Primary
-                2...19 => {
-                    const k = code - 2; // 0..17
+                dsp_abc_codes.primary...dsp_abc_codes.secondary - 1 => {
+                    const k = code - dsp_abc_codes.primary; // 0..17
                     const to = ([2]common.TurnOrientation{ .cw, .ccw })[k / 9];
                     const dir = desc.edge.side().?.turnDir(to);
                     const idx = k % 9;
@@ -591,9 +613,8 @@ pub fn decodeDspInput(in: common.DspInput, code: u5) DspInputSrc {
                     ) };
                 },
 
-                // Secondary
-                20...31 => {
-                    const k = code - 20; // 0..11
+                dsp_abc_codes.secondary...dsp_abc_codes.end - 1 => {
+                    const k = code - dsp_abc_codes.secondary; // 0..11
                     const dir = ([2]common.Direction{ .left, .right })[k / 6];
                     const idx = k % 6;
 
@@ -611,9 +632,8 @@ pub fn decodeDspInput(in: common.DspInput, code: u5) DspInputSrc {
             0 => return .zero,
             1 => return .one,
 
-            // Primary
-            2...31 => {
-                const k = code - 2; // 0..29
+            internal_edge_codes.edges...internal_edge_codes.end - 1 => {
+                const k = code - internal_edge_codes.edges; // 0..29
                 const side = ([3]common.BigEdge{ .h1, .h2, .h3 })[k / 10];
                 const dir: common.Direction = if ((k % 10) < 5) .left else .right;
                 const j = k % 5;
@@ -644,12 +664,7 @@ pub const IoInputSrc = union(enum) {
         self: @This(),
         writer: *std.Io.Writer,
     ) std.Io.Writer.Error!void {
-        switch (self) {
-            .zero => try writer.writeAll("0"),
-            .one => try writer.writeAll("1"),
-            .wire => |wire| try writer.print("{f}", .{wire}),
-            .code => |code| try writer.print("code {}", .{code}),
-        }
+        return formatInputSrc(self, writer);
     }
 };
 
@@ -667,15 +682,21 @@ const io_inputs: std.EnumArray(common.IoInput, IoInputDesc) = .init(.{
     .oe = IoInputDesc{ .parity = 1, .d = 4 },
 });
 
+/// Code ranges of §"IO inputs".
+const io_codes = struct {
+    const primary = 2; // 18: 9 CW then 9 CCW
+    const secondary = 20; // 12: 6 CW then 6 CCW
+    const end = 32;
+};
+
 pub fn decodeIoInput(in: common.IoInput, side: common.Side, code: u5) IoInputSrc {
     const desc = io_inputs.get(in);
     switch (code) {
         0 => return .zero,
         1 => return .one,
 
-        // Primary
-        2...19 => {
-            const k = code - 2; // 0..17
+        io_codes.primary...io_codes.secondary - 1 => {
+            const k = code - io_codes.primary; // 0..17
             const to = ([2]common.TurnOrientation{ .cw, .ccw })[k / 9];
             const dir = side.turnDir(to);
             const idx = k % 9;
@@ -688,9 +709,8 @@ pub fn decodeIoInput(in: common.IoInput, side: common.Side, code: u5) IoInputSrc
                 idx,
             ) };
         },
-        // Secondary
-        20...31 => {
-            const k = code - 20; // 0...11
+        io_codes.secondary...io_codes.end - 1 => {
+            const k = code - io_codes.secondary; // 0..11
             const to = ([2]common.TurnOrientation{ .cw, .ccw })[k / 6];
             const dir = side.turnDir(to);
             const idx = k % 6;
@@ -862,6 +882,29 @@ fn channelHasWire(
     return routing.segmentStart(c, wire.dir, wire.class, wire.local_track, grid) != null;
 }
 
+/// Connection boxes tap a segment anywhere along its span, so existence is
+/// decided by the edge the wire names. The wire flavour picks the edge kind.
+fn resolveTileInput(
+    tile: common.TileCoords,
+    src: anytype,
+    code: u5,
+    grid: common.GridSize,
+) @TypeOf(src) {
+    const wire = switch (src) {
+        .wire => |w| w,
+        else => return src,
+    };
+
+    const channel = if (@TypeOf(wire) == DirectionalWire4x1)
+        tile.bigChannel(wire.side, grid)
+    else
+        tile.channel(wire.side, grid);
+
+    if (!channelHasWire(channel, wire, grid))
+        return .{ .code = code };
+    return src;
+}
+
 pub fn resolveSwitchSink(
     sw: common.SwitchCoords,
     sink: DirectionalWire1x1,
@@ -887,15 +930,7 @@ pub fn resolveLogicInput(
     code: u5,
     grid: common.GridSize,
 ) LogicInputSrc {
-    const src = decodeLogicInput(in, code);
-    const wire = switch (src) {
-        .wire => |w| w,
-        else => return src,
-    };
-
-    if (!channelHasWire(tile.channel(wire.side, grid), wire, grid))
-        return .{ .code = code };
-    return src;
+    return resolveTileInput(tile, decodeLogicInput(in, code), code, grid);
 }
 
 pub fn resolveIoInput(
@@ -905,15 +940,7 @@ pub fn resolveIoInput(
     code: u5,
     grid: common.GridSize,
 ) IoInputSrc {
-    const src = decodeIoInput(in, side, code);
-    const wire = switch (src) {
-        .wire => |w| w,
-        else => return src,
-    };
-
-    if (!channelHasWire(tile.channel(wire.side, grid), wire, grid))
-        return .{ .code = code };
-    return src;
+    return resolveTileInput(tile, decodeIoInput(in, side, code), code, grid);
 }
 
 pub fn resolveBramInput(
@@ -922,15 +949,7 @@ pub fn resolveBramInput(
     code: u5,
     grid: common.GridSize,
 ) BramInputSrc {
-    const src = decodeBramInput(in, code);
-    const wire = switch (src) {
-        .wire => |w| w,
-        else => return src,
-    };
-
-    if (!channelHasWire(tile.bigChannel(wire.side, grid), wire, grid))
-        return .{ .code = code };
-    return src;
+    return resolveTileInput(tile, decodeBramInput(in, code), code, grid);
 }
 
 pub fn resolveDspInput(
@@ -939,15 +958,7 @@ pub fn resolveDspInput(
     code: u5,
     grid: common.GridSize,
 ) DspInputSrc {
-    const src = decodeDspInput(in, code);
-    const wire = switch (src) {
-        .wire => |w| w,
-        else => return src,
-    };
-
-    if (!channelHasWire(tile.bigChannel(wire.side, grid), wire, grid))
-        return .{ .code = code };
-    return src;
+    return resolveTileInput(tile, decodeDspInput(in, code), code, grid);
 }
 
 test "encode is the inverse of decode" {
