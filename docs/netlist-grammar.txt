@@ -1,0 +1,180 @@
+Netlist = Header Block*
+
+// General
+
+// All ???Number(X) are parsed as Number (with additional check for bitlength X)
+// However, when dumped, they are dumped as DecNumber, BinNumber or HexNumber as specified
+// The bitlength X is then used to determine the padding 0s.
+DecNumber = /0|[1-9][0-9_]*/
+BinNumber = /0b[01_]+/
+HexNumber = /0x[0-9A-Fa-f_]+/
+Number = DecNumber | BinNumber | HexNumber
+Bit = DecNumber(1)
+RawHexNumber = /[0-9A-Fa-f_]+/
+
+Name = /[A-Za-z_][A-Za-z0-9_.-]*/
+
+Side = 'N' | 'E' | 'S' | 'W'
+Direction = 'U' | 'R' | 'D' | 'L'
+Corner = 'NW' | 'NE' | 'SE' | 'SW'
+WireClass = 'L1' | 'L4' | 'L16'
+BigTileEdge =
+  'H' ('0' | '1' | '2' | '3' | '4')
+| ('W' | 'E') ('0' | '1' | '2' | '3')
+
+DirectionalWire = Side '[' Direction ']' '.' WireClass '[' DecNumber(3) ']'
+NonDirectionalWire = Side '.' WireClass '[' DecNumber(3) ']'
+BigDirectionalWire = BigTileEdge '[' Direction ']' '.' WireClass '[' DecNumber(3) ']'
+
+CellCoordinates = '(' DecNumber(?) ',' DecNumber(?) ')'
+
+// Header
+Header = Format Device Design Pass*
+Format = 'format' DecNumber(?) ';' // Currently 'format 1;'
+Device = 'device' String ';'
+Design = 'design' String ';'
+Pass = 'pass' PassName String ';'
+String = /"[^"]*"/
+PassName = 'synth' | 'opt' | 'techmap' | 'pack' | 'place' | 'route'
+
+// Blocks
+// When dumping to text: net declarations first, then cells, then nets
+// Order in each section is irrelevant, but preserved
+Block =
+  NetDecl
+| Cell
+| Net
+| Metadata
+
+// Net
+
+NetDecl = 'net' SignalName (':' NetType)? ';'
+NetType = 'clock' | 'reset'
+
+Net = 'net' SignalName (':' NetType)? '{' NetCommand* '}'
+
+Signal = SignalName | Number(?)
+SignalName = Name Index*
+Index =
+  '[' Number(?) ']'
+| '[' Number(?) '..' Number(?) ']'
+
+NetCommand =
+  NetParam '=' Number(?) ';'
+| Route
+| Metadata
+
+NetParam = 'PERIOD' | 'CLK' | 'RST' | 'PIN'
+
+Route = 'route' '{' RouteCommand+ '}'
+RouteCommand =
+  SwitchCommand
+| LogicCommand
+| BramCommand
+| DspCommand
+| IoCommand
+
+SwitchCommand = 'switch' CellCoordinates ':' SwitchDst '=' SwitchSrc ';'
+LogicCommand = 'logic' CellCoordinates ':' 'in' LogicInput '=' LogicInputSrc ';'
+BramCommand = 'bram' CellCoordinates ':' 'in' BramInput '=' BigDirectionalWire ';'
+DspCommand = 'dsp' CellCoordinates ':' 'in' DspInput '=' BigDirectionalWire ';'
+IoCommand = 'io' CellCoordinates ':' 'in' IoInput '=' DirectionalWire ';'
+
+SwitchDst = NonDirectionalWire
+SwitchSrc = NonDirectionalWire | SwitchTileOutput
+SwitchTileOutput = Corner '.' SwitchOutputName
+SwitchOutputName =
+  'O1A' // 0, Logic
+| 'O1B' // 1, Logic
+| 'O2A' // 2, Logic
+| 'O2B' // 3, Logic
+| 'I' // 0..3, IO
+| 'DO' '[' Number(4) ']' // X % 4, BRAM
+| 'O' '[' Number(4) ']' // X % 4, DSP
+| 'ZERO' // inert corner: T[?] evaluates to 0 value
+
+LogicInput = ('A' | 'B' | 'C' | 'D' | 'CE') ('1' | '2')
+LogicInputSrc =
+  'O1A'
+| 'O1B'
+| 'O2A'
+| 'O2B'
+| DirectionalWire
+
+BramInput =
+  ('A1' | 'A2' | 'DI') '[' DecNumber(4) ']'
+| 'WE1'
+| 'WE2'
+
+DspInput =
+  ('A' | 'B') '[' DecNumber(3) ']'
+| 'C' '[' DecNumber(4) ']'
+| 'MD'
+| 'AD'
+| 'WE'
+
+IoInput = 'O' | 'E' | 'IE' | 'OE' | 'EE'
+
+// Cell
+
+Cell = 'cell' Name (':' CellType)? '{' CellCommand* '}'
+CellType = CellPhysicalType | CellLogicalType
+
+CellPhysicalType =
+  'LUT4'
+| 'LUT3'
+| 'FF'
+| 'CARRY'
+| 'MEM'
+| 'MEM_DUAL'
+| 'BRAM'
+| 'BRAM_DUAL'
+| 'DSP'
+| 'DSP_ACC'
+| 'IO'
+
+CellLogicalType =
+  '$add'
+| '$sub'
+| '$mul'
+| '$mux'
+| '$decode'
+| '$and'
+| '$or'
+| '$not'
+| '$xor'
+| '$and_all'
+| '$or_all'
+| '$xor_all'
+| '$ff'
+| '$rom'
+| '$rom_dual'
+| '$ram'
+| '$ram_dual'
+| '$input'
+| '$output'
+| '$bidir'
+| '$blackbox'
+
+CellCommand =
+  SignalName '=' Number(?) ';'
+| 'PACK' '=' Name ';'
+| 'SLOT' '=' Slot ';'
+| 'SITE' '=' CellCoordinates ';'
+| 'in' SignalName '=' Signal ';'
+| 'out' SignalName '=' SignalName ';'
+| BramData
+| Metadata
+
+Slot = ('LE1' | 'LE2') ('.' 'A' | '.' 'B')?
+
+// ADDR_WIDTH and DATA_WIDTH are the address and data widths implied by the
+// WIDTH command of the enclosing bram block (see "Block RAM tile").
+// WIDTH must therefore appear before data {} within a block.
+BramData = 'data' '{' BramDataCommand+ '}'
+BramDataCommand = RawHexNumber(ADDR_WIDTH) ':' RawHexNumber(DATA_WIDTH)+ ';'
+
+Metadata = MetadataTag MetadataData ';'
+
+MetadataTag = /@[A-Za-z0-9_.]+/
+MetadataData = /([^;"]|"[^"]*")*/
