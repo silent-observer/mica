@@ -613,7 +613,7 @@ test "text: errors are reported with a line and column" {
         },
         .{
             .text = "format 1;\ndevice \"M1/S\";\nswitch (0, 2) { N.L1[0] = NE.O1A; }\n",
-            .err = "3:35: Trying to access output O1A, but tile (0,2).NE is io, not logic",
+            .err = "3:34: Trying to access output O1A, but tile (0,2).NE is io, not logic",
         },
         .{
             .text = "format 1;\ndevice \"M1/S\";\nbram (1, 9) { data { 000: 1; } }\n",

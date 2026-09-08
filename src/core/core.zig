@@ -11,6 +11,8 @@ pub const TextEmitter = @import("bitstream/TextEmitter.zig");
 pub const BinaryParser = @import("bitstream/BinaryParser.zig");
 pub const BinaryEmitter = @import("bitstream/BinaryEmitter.zig");
 
+pub const Configuration = @import("Configuration.zig");
+
 test "core tests" {
     std.testing.refAllDecls(@This());
     // refAllDecls only reaches pub decls, so test-only files have to be pulled

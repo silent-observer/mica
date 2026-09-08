@@ -387,7 +387,7 @@ fn generateLogicSink(f: *Fabric, tile: common.TileCoords) void {
                         .channel = tile.channel(w.side, f.grid) orelse continue,
                         .class = w.class,
                         .dir = w.dir,
-                        .track = w.local_track,
+                        .track = w.track,
                     }) orelse continue;
 
                     f.in_conns.append(f.alloc, .{
@@ -520,7 +520,7 @@ fn generateIoSink(f: *Fabric, tile: common.TileCoords) void {
                         .channel = channel,
                         .class = w.class,
                         .dir = w.dir,
-                        .track = w.local_track,
+                        .track = w.track,
                     }) orelse continue;
 
                     f.in_conns.append(f.alloc, .{

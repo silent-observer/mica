@@ -310,6 +310,21 @@ pub const WireClass = enum {
             .l16 => try writer.writeAll("L16"),
         }
     }
+
+    pub fn tracksPerSwitch(class: WireClass) u8 {
+        return switch (class) {
+            .l1 => 6,
+            .l4 => 2,
+            .l16 => 1,
+        };
+    }
+    pub fn tracksPerEdge(class: WireClass) u8 {
+        return switch (class) {
+            .l1 => 6,
+            .l4 => 8,
+            .l16 => 4,
+        };
+    }
 };
 
 pub const TileCoords = struct {
@@ -450,6 +465,77 @@ pub const SwitchCoords = struct {
                 .col = sw.col + step,
             },
         };
+    }
+};
+
+/// Track number from the perspective of a switchbox
+pub const SwitchTrack = enum(u8) {
+    _,
+    pub fn int(t: SwitchTrack) u8 {
+        return @intFromEnum(t);
+    }
+    pub fn track(i: u8) SwitchTrack {
+        return @enumFromInt(i);
+    }
+};
+/// Track number from the perspective of an edge, input connection boxes use this
+pub const EdgeTrack = enum(u8) {
+    _,
+    pub fn int(t: EdgeTrack) u8 {
+        return @intFromEnum(t);
+    }
+    pub fn track(i: u8) EdgeTrack {
+        return @enumFromInt(i);
+    }
+};
+
+pub const SwitchWire = struct {
+    side: Side,
+    class: WireClass,
+    track: SwitchTrack,
+
+    pub fn format(
+        self: @This(),
+        writer: *std.Io.Writer,
+    ) std.Io.Writer.Error!void {
+        try writer.print(
+            "{f}.{f}[{}]",
+            .{ self.side, self.class, self.track.int() },
+        );
+    }
+};
+
+pub const DirectionalWire1x1 = struct {
+    side: Side,
+    dir: Direction,
+    class: WireClass,
+    track: EdgeTrack,
+
+    pub fn format(
+        self: @This(),
+        writer: *std.Io.Writer,
+    ) std.Io.Writer.Error!void {
+        try writer.print(
+            "{f}[{f}].{f}[{}]",
+            .{ self.side, self.dir, self.class, self.track.int() },
+        );
+    }
+};
+
+pub const DirectionalWire4x1 = struct {
+    side: BigEdge,
+    dir: Direction,
+    class: WireClass,
+    track: EdgeTrack,
+
+    pub fn format(
+        self: @This(),
+        writer: *std.Io.Writer,
+    ) std.Io.Writer.Error!void {
+        try writer.print(
+            "{f}[{f}].{f}[{}]",
+            .{ self.side, self.dir, self.class, self.track.int() },
+        );
     }
 };
 

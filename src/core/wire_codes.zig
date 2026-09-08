@@ -21,58 +21,28 @@ pub const LogicOutput = enum(u2) {
     }
 };
 
-pub const DirectionalWire1x1 = struct {
-    side: common.Side,
-    dir: common.Direction,
-    class: common.WireClass,
-    local_track: u8,
-
-    pub fn format(
-        self: @This(),
-        writer: *std.Io.Writer,
-    ) std.Io.Writer.Error!void {
-        try writer.print(
-            "{f}[{f}].{f}[{}]",
-            .{ self.side, self.dir, self.class, self.local_track },
-        );
-    }
-};
-
-pub const DirectionalWire4x1 = struct {
-    side: common.BigEdge,
-    dir: common.Direction,
-    class: common.WireClass,
-    local_track: u8,
-
-    pub fn format(
-        self: @This(),
-        writer: *std.Io.Writer,
-    ) std.Io.Writer.Error!void {
-        try writer.print(
-            "{f}[{f}].{f}[{}]",
-            .{ self.side, self.dir, self.class, self.local_track },
-        );
-    }
-};
-
 fn trackWindow(
     parity: u1,
     d: usize,
     idx: usize,
-) struct { class: common.WireClass, local_track: u8 } {
+) struct { class: common.WireClass, track: common.EdgeTrack } {
     const i = (d + idx) % 9;
     const p: u8 = parity;
-    return switch (i) {
-        0 => .{ .class = .l1, .local_track = p },
-        1 => .{ .class = .l4, .local_track = p },
-        2 => .{ .class = .l16, .local_track = p },
-        3 => .{ .class = .l1, .local_track = p + 2 },
-        4 => .{ .class = .l4, .local_track = p + 2 },
-        5 => .{ .class = .l4, .local_track = p + 4 },
-        6 => .{ .class = .l1, .local_track = p + 4 },
-        7 => .{ .class = .l16, .local_track = p + 2 },
-        8 => .{ .class = .l4, .local_track = p + 6 },
+    const class: common.WireClass, const edge_track: u8 = switch (i) {
+        0 => .{ .l1, p },
+        1 => .{ .l4, p },
+        2 => .{ .l16, p },
+        3 => .{ .l1, p + 2 },
+        4 => .{ .l4, p + 2 },
+        5 => .{ .l4, p + 4 },
+        6 => .{ .l1, p + 4 },
+        7 => .{ .l16, p + 2 },
+        8 => .{ .l4, p + 6 },
         else => unreachable,
+    };
+    return .{
+        .class = class,
+        .track = .track(edge_track),
     };
 }
 
@@ -82,13 +52,13 @@ fn window1(
     parity: u1,
     d: usize,
     idx: usize,
-) DirectionalWire1x1 {
+) common.DirectionalWire1x1 {
     const r = trackWindow(parity, d, idx);
-    return DirectionalWire1x1{
+    return common.DirectionalWire1x1{
         .side = side,
         .dir = dir,
         .class = r.class,
-        .local_track = r.local_track,
+        .track = r.track,
     };
 }
 
@@ -98,13 +68,13 @@ fn window4(
     parity: u1,
     d: usize,
     idx: usize,
-) DirectionalWire4x1 {
+) common.DirectionalWire4x1 {
     const r = trackWindow(parity, d, idx);
-    return DirectionalWire4x1{
+    return common.DirectionalWire4x1{
         .side = side,
         .dir = dir,
         .class = r.class,
-        .local_track = r.local_track,
+        .track = r.track,
     };
 }
 
@@ -123,7 +93,7 @@ pub const LogicInputSrc = union(enum) {
     zero: void,
     one: void,
     local: LogicOutput,
-    wire: DirectionalWire1x1,
+    wire: common.DirectionalWire1x1,
     code: u5,
 
     pub fn format(
@@ -249,7 +219,7 @@ pub fn encodeLogicInput(in: common.LogicInput, src: LogicInputSrc) ?u5 {
 pub const BramInputSrc = union(enum) {
     zero: void,
     one: void,
-    wire: DirectionalWire4x1,
+    wire: common.DirectionalWire4x1,
     code: u5,
 
     pub fn format(
@@ -441,7 +411,7 @@ pub fn encodeBramInput(in: common.BramInput, src: BramInputSrc) ?u5 {
 pub const DspInputSrc = union(enum) {
     zero: void,
     one: void,
-    wire: DirectionalWire4x1,
+    wire: common.DirectionalWire4x1,
     code: u5,
 
     pub fn format(
@@ -657,7 +627,7 @@ pub fn encodeDspInput(in: common.DspInput, src: DspInputSrc) ?u5 {
 pub const IoInputSrc = union(enum) {
     zero: void,
     one: void,
-    wire: DirectionalWire1x1,
+    wire: common.DirectionalWire1x1,
     code: u5,
 
     pub fn format(
@@ -737,7 +707,7 @@ pub fn encodeIoInput(in: common.IoInput, side: common.Side, src: IoInputSrc) ?u5
 
 pub const SwitchSinkSrc = union(enum) {
     out: TileSource,
-    wire: DirectionalWire1x1,
+    wire: common.SwitchWire,
     code: u4,
 
     pub fn format(
@@ -768,8 +738,8 @@ pub const TileSource = struct {
     }
 };
 
-pub fn decodeSwitchSink(sink: DirectionalWire1x1, code: u4) SwitchSinkSrc {
-    const u = sink.local_track;
+pub fn decodeSwitchSink(sink: common.SwitchWire, code: u4) SwitchSinkSrc {
+    const u = sink.track.int();
     const s = sink.side.int();
     switch (code) {
         // Tile output
@@ -809,8 +779,7 @@ pub fn decodeSwitchSink(sink: DirectionalWire1x1, code: u4) SwitchSinkSrc {
             return .{ .wire = .{
                 .class = .l1,
                 .side = src_side,
-                .dir = src_side.inDir(),
-                .local_track = src_track,
+                .track = .track(src_track),
             } };
         },
 
@@ -827,8 +796,7 @@ pub fn decodeSwitchSink(sink: DirectionalWire1x1, code: u4) SwitchSinkSrc {
             return .{ .wire = .{
                 .class = .l4,
                 .side = src_side,
-                .dir = src_side.inDir(),
-                .local_track = src_track,
+                .track = .track(src_track),
             } };
         },
 
@@ -844,14 +812,13 @@ pub fn decodeSwitchSink(sink: DirectionalWire1x1, code: u4) SwitchSinkSrc {
             return .{ .wire = .{
                 .class = .l16,
                 .side = src_side,
-                .dir = src_side.inDir(),
-                .local_track = 0,
+                .track = .track(0),
             } };
         },
     }
 }
 
-pub fn encodeSwitchSink(sink: DirectionalWire1x1, src: SwitchSinkSrc) ?u4 {
+pub fn encodeSwitchSink(sink: common.SwitchWire, src: SwitchSinkSrc) ?u4 {
     if (src == .code) return src.code;
     for (0..16) |i| {
         const code: u4 = @intCast(i);
@@ -879,7 +846,7 @@ fn channelHasWire(
     grid: common.GridSize,
 ) bool {
     const c = channel orelse return false;
-    return routing.segmentStart(c, wire.dir, wire.class, wire.local_track, grid) != null;
+    return routing.segmentStart(c, wire.dir, wire.class, wire.track, grid) != null;
 }
 
 /// Connection boxes tap a segment anywhere along its span, so existence is
@@ -895,7 +862,7 @@ fn resolveTileInput(
         else => return src,
     };
 
-    const channel = if (@TypeOf(wire) == DirectionalWire4x1)
+    const channel = if (@TypeOf(wire) == common.DirectionalWire4x1)
         tile.bigChannel(wire.side, grid)
     else
         tile.channel(wire.side, grid);
@@ -907,7 +874,7 @@ fn resolveTileInput(
 
 pub fn resolveSwitchSink(
     sw: common.SwitchCoords,
-    sink: DirectionalWire1x1,
+    sink: common.SwitchWire,
     code: u4,
     grid: common.GridSize,
 ) SwitchSinkSrc {
@@ -919,7 +886,7 @@ pub fn resolveSwitchSink(
 
     // A switchbox only reaches the segments that start and end at it, so
     // existence is decided by whether the driving box is on the grid.
-    if (routing.incomingTrack(sw, wire.side, wire.class, wire.local_track, grid) == null)
+    if (routing.incomingTrack(sw, wire.side, wire.class, wire.track, grid) == null)
         return .{ .code = code };
     return src;
 }
@@ -1012,17 +979,11 @@ test "encode is the inverse of decode" {
 
     for (std.enums.values(common.Side)) |side| {
         for (std.enums.values(common.WireClass)) |class| {
-            const local_track_count: u8 = switch (class) {
-                .l1 => 6,
-                .l4 => 2,
-                .l16 => 1,
-            };
-            for (0..local_track_count) |local_track| {
-                const sink = DirectionalWire1x1{
+            for (0..class.tracksPerSwitch()) |switch_track| {
+                const sink = common.SwitchWire{
                     .side = side,
-                    .dir = side.outDir(),
                     .class = class,
-                    .local_track = @intCast(local_track),
+                    .track = .track(@intCast(switch_track)),
                 };
                 for (0..16) |i| {
                     const code: u4 = @intCast(i);
@@ -1041,16 +1002,15 @@ const mica1s_grid = common.GridSize{ .rows = 50, .cols = 66 };
 test "resolveSwitchSink flags wires missing at a grid corner" {
     // At (0,0) nothing arrives from the north or the west.
     const sw = common.SwitchCoords{ .row = 0, .col = 0 };
-    const sink = DirectionalWire1x1{
+    const sink = common.SwitchWire{
         .side = .n,
-        .dir = common.Side.n.outDir(),
         .class = .l1,
-        .local_track = 0,
+        .track = .track(0),
     };
 
     // str = S, lft = W, rgt = E.
     const expected = [16]std.meta.Tag(SwitchSinkSrc){
-        .out,  .out,  .out,  .out, // tile outputs always name something
+        .out, .out, .out, .out, // tile outputs always name something
         .wire, .code, .wire, // L1 str / lft / rgt
         .wire, .wire, // L4 str
         .code, .code, // L4 lft
@@ -1071,17 +1031,11 @@ test "resolveSwitchSink is transparent in the interior" {
     const sw = common.SwitchCoords{ .row = 24, .col = 32 };
     for (std.enums.values(common.Side)) |side| {
         for (std.enums.values(common.WireClass)) |class| {
-            const local_track_count: u8 = switch (class) {
-                .l1 => 6,
-                .l4 => 2,
-                .l16 => 1,
-            };
-            for (0..local_track_count) |local_track| {
-                const sink = DirectionalWire1x1{
+            for (0..class.tracksPerSwitch()) |switch_track| {
+                const sink = common.SwitchWire{
                     .side = side,
-                    .dir = side.outDir(),
                     .class = class,
-                    .local_track = @intCast(local_track),
+                    .track = .track(@intCast(switch_track)),
                 };
                 for (0..16) |i| {
                     const code: u4 = @intCast(i);

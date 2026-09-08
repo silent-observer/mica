@@ -74,7 +74,7 @@ fn markChannelRead(
         channel,
         wire.dir,
         wire.class,
-        wire.local_track,
+        wire.track,
         e.config.model.grid,
     ) orelse return;
     e.markRead(key);
@@ -89,10 +89,10 @@ fn collectSwitchReads(e: *TextEmitter, sw: common.SwitchCoords) void {
     while (side_iter.next()) |side_entry| {
         const side = side_entry.key;
         for (&side_entry.value.l1, 0..) |code, track|
-            e.collectSwitchSinkRead(sw, side, .l1, @intCast(track), code);
+            e.collectSwitchSinkRead(sw, side, .l1, .track(@intCast(track)), code);
         for (&side_entry.value.l4, 0..) |code, track|
-            e.collectSwitchSinkRead(sw, side, .l4, @intCast(track), code);
-        e.collectSwitchSinkRead(sw, side, .l16, 0, side_entry.value.l16);
+            e.collectSwitchSinkRead(sw, side, .l4, .track(@intCast(track)), code);
+        e.collectSwitchSinkRead(sw, side, .l16, .track(0), side_entry.value.l16);
     }
 }
 
@@ -101,15 +101,14 @@ fn collectSwitchSinkRead(
     sw: common.SwitchCoords,
     side: common.Side,
     class: common.WireClass,
-    track: u3,
+    track: common.SwitchTrack,
     code: u4,
 ) void {
     if (code == 0) return;
     const src = wire_codes.decodeSwitchSink(.{
         .side = side,
         .class = class,
-        .dir = side.outDir(),
-        .local_track = track,
+        .track = track,
     }, code);
     const wire = switch (src) {
         .wire => |w| w,
@@ -126,9 +125,9 @@ fn collectSwitchSinkRead(
     ) orelse return;
     e.markRead(.{
         .start = start,
-        .dir = wire.dir,
+        .dir = side.outDir(),
         .class = wire.class,
-        .local_track = wire.local_track,
+        .track = wire.track,
     });
 }
 
@@ -243,7 +242,7 @@ fn emitSwitchSink(
     sw: common.SwitchCoords,
     side: common.Side,
     class: common.WireClass,
-    track: u3,
+    track: common.SwitchTrack,
     code: u4,
 ) !void {
     // A code-0 wire is parked on T[0] rather than driven by it, unless
@@ -252,24 +251,23 @@ fn emitSwitchSink(
         .start = sw,
         .dir = side.outDir(),
         .class = class,
-        .local_track = track,
+        .track = track,
     })) return;
     const w = &e.w.writer;
 
-    const sink = wire_codes.DirectionalWire1x1{
+    const sink = common.SwitchWire{
         .side = side,
         .class = class,
-        .dir = side.outDir(),
-        .local_track = track,
+        .track = track,
     };
     const src = wire_codes.resolveSwitchSink(sw, sink, code, e.config.model.grid);
     if (src == .code)
         e.warn(
-            "switch ({},{}) {f}.{f}[{}]: code {} names a wire that does not exist here",
-            .{ sw.row, sw.col, side, class, track, code },
+            "switch ({},{}) {f}: code {} names a wire that does not exist here",
+            .{ sw.row, sw.col, sink, code },
         );
 
-    try w.print("    {f}.{f}[{}] = ", .{ side, class, track });
+    try w.print("    {f} = ", .{sink});
 
     switch (src) {
         .out => |ts| {
@@ -292,7 +290,7 @@ fn emitSwitchSink(
                 .io => try w.writeAll("I"),
             }
         },
-        .wire => |wire| try w.print("{f}.{f}[{}]", .{ wire.side, wire.class, wire.local_track }),
+        .wire => |wire| try w.print("{f}", .{wire}),
         .code => |c| try w.print("code {}", .{c}),
     }
     try w.writeAll(";\n");
@@ -311,10 +309,10 @@ fn emitSwitchBlock(e: *TextEmitter, sw: common.SwitchCoords) !void {
     while (side_iter.next()) |side_entry| {
         const side = side_entry.key;
         for (&side_entry.value.l1, 0..) |code, track|
-            try e.emitSwitchSink(sw, side, .l1, @intCast(track), code);
+            try e.emitSwitchSink(sw, side, .l1, .track(@intCast(track)), code);
         for (&side_entry.value.l4, 0..) |code, track|
-            try e.emitSwitchSink(sw, side, .l4, @intCast(track), code);
-        try e.emitSwitchSink(sw, side, .l16, 0, side_entry.value.l16);
+            try e.emitSwitchSink(sw, side, .l4, .track(@intCast(track)), code);
+        try e.emitSwitchSink(sw, side, .l16, .track(0), side_entry.value.l16);
     }
 
     try w.writeAll("}\n\n");
