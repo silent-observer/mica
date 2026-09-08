@@ -9,6 +9,7 @@ const CommonParser = @This();
 alloc: std.mem.Allocator,
 input: []const u8,
 pos: usize,
+prev_pos: usize,
 errorText: ?[]const u8,
 
 pub fn init(input: []const u8, alloc: std.mem.Allocator) CommonParser {
@@ -16,6 +17,7 @@ pub fn init(input: []const u8, alloc: std.mem.Allocator) CommonParser {
         .alloc = alloc,
         .input = input,
         .pos = 0,
+        .prev_pos = 0,
         .errorText = null,
     };
 }
@@ -69,7 +71,12 @@ pub fn expect(p: *CommonParser, expected: u8) !void {
     p.skipWhitespace();
     const c = p.peek(0) orelse try p.err("Expected '{c}', but got end of file", .{expected});
     if (c != expected) return try p.err("Expected '{c}', but got '{c}'", .{ expected, c });
+    p.prev_pos = p.pos;
     p.pos += 1;
+}
+
+pub fn undo(p: *CommonParser) void {
+    p.pos = p.prev_pos;
 }
 
 pub fn checkEof(p: *CommonParser) bool {
@@ -84,6 +91,7 @@ pub fn parseWord(p: *CommonParser) ![]const u8 {
     if (!std.ascii.isAlphabetic(p.peek(0).?))
         try p.err("Expected a word, but got '{c}'", .{p.peek(0).?});
     const start = p.pos;
+    p.prev_pos = p.pos;
     while (p.peek(0)) |c| {
         if (!std.ascii.isAlphanumeric(c) and c != '_') break;
         p.pos += 1;
@@ -104,6 +112,7 @@ pub fn parseNumber(p: *CommonParser, comptime T: type) !T {
     if (!std.ascii.isDigit(p.peek(0).?))
         try p.err("Expected a number, but got '{c}'", .{p.peek(0).?});
     const start = p.pos;
+    p.prev_pos = p.pos;
     while (p.peek(0)) |c| {
         if (std.mem.countScalar(u8, "0123456789ABCDEFabcdef_xb", c) == 0) break;
         p.pos += 1;
@@ -127,6 +136,7 @@ pub fn parseHexNumber(p: *CommonParser, comptime T: type) !T {
     if (p.eof())
         try p.err("Expected a number, but got end of file", .{});
     const start = p.pos;
+    p.prev_pos = p.pos;
     while (p.peek(0)) |c| {
         if (std.mem.countScalar(u8, "0123456789ABCDEFabcdef", c) == 0) break;
         p.pos += 1;
@@ -146,6 +156,7 @@ pub fn parseHexNumber(p: *CommonParser, comptime T: type) !T {
 pub fn parseString(p: *CommonParser) ![]const u8 {
     p.skipWhitespace();
     const start = p.pos;
+    p.prev_pos = p.pos;
     try p.expect('"');
     while (!p.eof()) {
         if (p.check('"')) {
@@ -157,21 +168,20 @@ pub fn parseString(p: *CommonParser) ![]const u8 {
         } else p.pos += 1;
     }
     const end = p.pos;
-    return p.input[start..end];
+    return p.input[start + 1 .. end - 1];
 }
 
 pub fn parseDeviceName(p: *CommonParser) ![]const u8 {
     const str = try p.parseString();
-    if (str.len != 2 + 4)
+    if (str.len != 4)
         try p.err("Expected a 4 character device name like \"M1/S\", but got end of file", .{});
 
-    const device_name = str[1..5];
-    for (device_name) |c| {
+    for (str) |c| {
         if (!std.ascii.isAlphanumeric(c) and c != '/' and c != '_')
             try p.err("Only alphanumeric characters, '/' and '_' are allowed in device names" ++
-                ", but got '{s}'", .{device_name});
+                ", but got '{s}'", .{str});
     }
-    return device_name;
+    return str;
 }
 
 pub fn parseTileCoords(p: *CommonParser) !common.TileCoords {
@@ -237,12 +247,12 @@ const logic_outputs: std.StaticStringMap(wire_codes.LogicOutput) = .initComptime
     .{ "O2B", .o2b },
 });
 
-pub fn parseSwitchWire(p: *CommonParser, side_word: []const u8) !common.SwitchWire {
-    const side = sides.get(side_word) orelse
-        try p.err(
-            "Expected a wire like N.L1[3], but got '{s}'",
-            .{side_word},
-        );
+pub fn parseSwitchWire(p: *CommonParser) !?common.SwitchWire {
+    const side_word = try p.parseWord();
+    const side = sides.get(side_word) orelse {
+        p.undo();
+        return null;
+    };
     try p.expect('.');
     const class_word = try p.parseWord();
     const class = classes.get(class_word) orelse
@@ -272,12 +282,12 @@ pub fn parseSwitchWire(p: *CommonParser, side_word: []const u8) !common.SwitchWi
     };
 }
 
-pub fn parseDirectionalWire1x1(p: *CommonParser, side_word: []const u8) !common.DirectionalWire1x1 {
-    const side = sides.get(side_word) orelse
-        try p.err(
-            "Expected a wire like N[R].L1[3], but got '{s}'",
-            .{side_word},
-        );
+pub fn parseDirectionalWire1x1(p: *CommonParser) !?common.DirectionalWire1x1 {
+    const side_word = try p.parseWord();
+    const side = sides.get(side_word) orelse {
+        p.undo();
+        return null;
+    };
 
     try p.expect('[');
     const dir_word = try p.parseWord();
@@ -330,12 +340,12 @@ pub fn parseDirectionalWire1x1(p: *CommonParser, side_word: []const u8) !common.
     };
 }
 
-pub fn parseDirectionalWire4x1(p: *CommonParser, side_word: []const u8) !common.DirectionalWire4x1 {
-    const side = big_edges.get(side_word) orelse
-        try p.err(
-            "Expected a wire like H2[R].L1[3], but got '{s}'",
-            .{side_word},
-        );
+pub fn parseDirectionalWire4x1(p: *CommonParser) !?common.DirectionalWire4x1 {
+    const side_word = try p.parseWord();
+    const side = big_edges.get(side_word) orelse {
+        p.undo();
+        return null;
+    };
 
     try p.expect('[');
     const dir_word = try p.parseWord();
@@ -390,17 +400,15 @@ pub fn parseDirectionalWire4x1(p: *CommonParser, side_word: []const u8) !common.
 }
 
 pub fn parseSwitchSrc(p: *CommonParser, sw: common.SwitchCoords, model: *const DeviceModel) !wire_codes.SwitchSinkSrc {
-    const word = try p.parseWord();
-    if (std.mem.eql(u8, word, "code")) {
+    if (std.mem.eql(u8, try p.parseWord(), "code")) {
         const raw = try p.parseNumber(u4);
         return .{ .code = raw };
-    }
+    } else p.undo();
 
-    if (sides.get(word) != null) {
-        const wire = try p.parseSwitchWire(word);
+    if (try p.parseSwitchWire()) |wire|
         return .{ .wire = wire };
-    }
 
+    const word = try p.parseWord();
     if (corners.get(word)) |corner| {
         try p.expect('.');
         const output_word = try p.parseWord();
@@ -504,7 +512,7 @@ pub fn parseSwitchSrc(p: *CommonParser, sw: common.SwitchCoords, model: *const D
             "Trying to access unknown output '{s}'",
             .{word},
         );
-    }
+    } else p.undo();
 
     try p.err(
         "Invalid switch sink: '{s}'",
@@ -524,14 +532,18 @@ pub fn parseLogicInputSrc(p: *CommonParser, in: common.LogicInput) !u5 {
     if (try p.parseInputConstant()) |c|
         return wire_codes.encodeLogicInput(in, if (c == 0) .zero else .one).?;
 
-    const word = try p.parseWord();
-    if (std.mem.eql(u8, word, "code"))
-        return try p.parseNumber(u5);
+    if (std.mem.eql(u8, try p.parseWord(), "code"))
+        return try p.parseNumber(u5)
+    else
+        p.undo();
 
-    if (logic_outputs.get(word)) |lo|
-        return wire_codes.encodeLogicInput(in, .{ .local = lo }).?;
+    if (logic_outputs.get(try p.parseWord())) |lo|
+        return wire_codes.encodeLogicInput(in, .{ .local = lo }).?
+    else
+        p.undo();
 
-    const wire = try p.parseDirectionalWire1x1(word);
+    const wire = try p.parseDirectionalWire1x1() orelse
+        try p.err("Expected a logic tile input like N[R].L1[3]", .{});
     return wire_codes.encodeLogicInput(in, .{ .wire = wire }) orelse
         try p.err("For input {f}, wire {f} is not accessible", .{ in, wire });
 }
@@ -540,15 +552,15 @@ pub fn parseBramInputSrc(p: *CommonParser, in: common.BramInput) !u5 {
     if (try p.parseInputConstant()) |c|
         return wire_codes.encodeBramInput(in, if (c == 0) .zero else .one).?;
 
-    const word = try p.parseWord();
-    if (std.mem.eql(u8, word, "code")) {
+    if (std.mem.eql(u8, try p.parseWord(), "code")) {
         return switch (in) {
             .a1, .a2, .di => try p.parseNumber(u4),
             .we1, .we2 => try p.parseNumber(u5),
         };
-    }
+    } else p.undo();
 
-    const wire = try p.parseDirectionalWire4x1(word);
+    const wire = try p.parseDirectionalWire4x1() orelse
+        try p.err("Expected a BRAM tile input like H1[R].L1[3]", .{});
     return wire_codes.encodeBramInput(in, .{ .wire = wire }) orelse
         try p.err("For input {f}, wire {f} is not accessible", .{ in, wire });
 }
@@ -557,11 +569,13 @@ pub fn parseDspInputSrc(p: *CommonParser, in: common.DspInput) !u5 {
     if (try p.parseInputConstant()) |c|
         return wire_codes.encodeDspInput(in, if (c == 0) .zero else .one).?;
 
-    const word = try p.parseWord();
-    if (std.mem.eql(u8, word, "code"))
-        return try p.parseNumber(u5);
+    if (std.mem.eql(u8, try p.parseWord(), "code"))
+        return try p.parseNumber(u5)
+    else
+        p.undo();
 
-    const wire = try p.parseDirectionalWire4x1(word);
+    const wire = try p.parseDirectionalWire4x1() orelse
+        try p.err("Expected a DSP tile input like H1[R].L1[3]", .{});
     return wire_codes.encodeDspInput(in, .{ .wire = wire }) orelse
         try p.err("For input {f}, wire {f} is not accessible", .{ in, wire });
 }
@@ -570,11 +584,13 @@ pub fn parseIoInputSrc(p: *CommonParser, side: common.Side, in: common.IoInput) 
     if (try p.parseInputConstant()) |c|
         return wire_codes.encodeIoInput(in, side, if (c == 0) .zero else .one).?;
 
-    const word = try p.parseWord();
-    if (std.mem.eql(u8, word, "code"))
-        return try p.parseNumber(u5);
+    if (std.mem.eql(u8, try p.parseWord(), "code"))
+        return try p.parseNumber(u5)
+    else
+        p.undo();
 
-    const wire = try p.parseDirectionalWire1x1(word);
+    const wire = try p.parseDirectionalWire1x1() orelse
+        try p.err("Expected an IO tile input like N[R].L1[3]", .{});
     return wire_codes.encodeIoInput(in, side, .{ .wire = wire }) orelse
         try p.err("For input {f}, wire {f} is not accessible", .{ in, wire });
 }

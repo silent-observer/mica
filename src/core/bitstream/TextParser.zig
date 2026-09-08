@@ -123,8 +123,8 @@ fn parseSwitchBlock(p: *TextParser) !void {
     const sw = try p.parseSwitchCoords();
     try p.p.expect('{');
     while (!p.p.check('}')) {
-        const sink_side_word = try p.p.parseWord();
-        const sink = try p.p.parseSwitchWire(sink_side_word);
+        const sink = try p.p.parseSwitchWire() orelse
+            try p.p.err("Expected a switch sink like N.L1[3]", .{});
 
         try p.p.expect('=');
         const source = try p.p.parseSwitchSrc(sw, &p.config.?.model);
