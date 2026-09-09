@@ -591,13 +591,11 @@ pub fn parseInputSrc(
 
     const m = p.mark();
     if (std.mem.eql(u8, try p.parseWord(), "code")) {
-        if (t == .bram)
-            return switch (in) {
-                .a1, .a2, .di => try p.parseNumber(u4),
-                .we1, .we2 => try p.parseNumber(u5),
-            }
-        else
-            return try p.parseNumber(u5);
+        return switch (wire_codes.codeBits(t, in)) {
+            4 => try p.parseNumber(u4),
+            5 => try p.parseNumber(u5),
+            else => unreachable,
+        };
     } else p.reset(m);
 
     if (t == .logic) {

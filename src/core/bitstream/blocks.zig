@@ -32,28 +32,23 @@ pub const reg = Metadata{
     .table = &reg_table,
 };
 
-pub const logic = Metadata{
-    .tile = .logic,
-    .Config = Configuration.Logic,
-    .table = &logic_table,
-};
-pub const bram = Metadata{
-    .tile = .bram,
-    .Config = Configuration.Bram,
-    .table = &bram_table,
-};
-pub const dsp = Metadata{
-    .tile = .dsp,
-    .Config = Configuration.Dsp,
-    .table = &dsp_table,
-};
-pub const io = Metadata{
-    .tile = .io,
-    .Config = Configuration.Io,
-    .table = &io_table,
-};
+fn tableFor(comptime t: common.TileType) []const Field {
+    return switch (t) {
+        .logic => &logic_table,
+        .bram => &bram_table,
+        .dsp => &dsp_table,
+        .io => &io_table,
+        .inert => @compileError("inert tiles carry no configuration"),
+    };
+}
 
-pub const tile_blocks = [_]Metadata{ logic, bram, dsp, io };
+pub fn forTile(comptime t: common.TileType) Metadata {
+    return .{
+        .tile = t,
+        .Config = Configuration.For(t),
+        .table = tableFor(t),
+    };
+}
 
 pub const ValueKind = union(enum) {
     bit: void,

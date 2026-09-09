@@ -849,7 +849,7 @@ pub fn resolveSwitchSink(
 
 pub fn InputSrc(t: common.TileType) type {
     return switch (t) {
-        .inert => void,
+        .inert => @compileError("inert tiles carry no configuration"),
         .logic => LogicInputSrc,
         .bram => BramInputSrc,
         .dsp => DspInputSrc,
@@ -867,15 +867,19 @@ pub fn decodeInput(comptime t: common.TileType, in: t.Input(), cxt: t.Input().Cx
     };
 }
 
-pub fn encodeInput(comptime t: common.TileType, in: t.Input(), cxt: t.Input().Cxt, src: InputSrc(t)) ?u5 {
-    if (src == .code) return src.code;
-    const max_codes: usize = if (t == .bram)
+pub fn codeBits(comptime t: common.TileType, in: t.Input()) u3 {
+    return if (t == .bram)
         switch (in) {
-            .a1, .a2, .di => 16,
-            .we1, .we2 => 32,
+            .a1, .a2, .di => 4,
+            .we1, .we2 => 5,
         }
     else
-        32;
+        5;
+}
+
+pub fn encodeInput(comptime t: common.TileType, in: t.Input(), cxt: t.Input().Cxt, src: InputSrc(t)) ?u5 {
+    if (src == .code) return src.code;
+    const max_codes = @as(usize, 1) << codeBits(t, in);
     for (0..max_codes) |i| {
         const code: u5 = @intCast(i);
         const found_code: InputSrc(t) = decodeInput(t, in, cxt, code);

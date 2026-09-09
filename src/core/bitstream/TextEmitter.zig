@@ -139,7 +139,7 @@ fn collectTileReads(e: *TextEmitter, comptime t: common.TileType, tile: common.T
 
     for (0..t.Input().TOTAL) |idx| {
         const in = t.Input().fromIdx(@intCast(idx));
-        const code: u5 = @intCast(getInput(config, in));
+        const code: u5 = @intCast(Configuration.getInput(config, in));
         if (code == 0) continue;
         const wire = switch (wire_codes.decodeInput(t, in, cxt, code)) {
             .wire => |w| w,
@@ -269,24 +269,6 @@ fn emitSwitchBlock(e: *TextEmitter, sw: common.SwitchCoords) !void {
     try w.writeAll("}\n\n");
 }
 
-fn getInput(cfg: anytype, in: anytype) u5 {
-    switch (@typeInfo(@TypeOf(in))) {
-        // LogicInput / IoInput: flat EnumArray on the tile struct
-        .@"enum" => return cfg.inputs.get(in),
-        // BramInput / DspInput: one field per tag, array index in the payload
-        .@"union" => switch (in) {
-            inline else => |idx, tag| {
-                const f = &@field(cfg, @tagName(tag));
-                if (@TypeOf(idx) == void)
-                    return f.*
-                else
-                    return f[idx];
-            },
-        },
-        else => @compileError("bad Input type: " ++ @typeName(@TypeOf(in))),
-    }
-}
-
 fn emitCommands(
     e: *TextEmitter,
     comptime meta: blocks.Metadata,
@@ -403,7 +385,7 @@ fn emitCommands(
     if (meta.tile) |t| {
         for (0..t.Input().TOTAL) |idx| {
             const in = t.Input().fromIdx(@intCast(idx));
-            const code = getInput(cfg, in);
+            const code = Configuration.getInput(cfg, in);
             if (code == 0) continue;
             const cxt = e.config.model.inputCxt(t, tile);
             const src = wire_codes.resolveInput(t, tile, in, cxt, code, e.config.model.grid);
@@ -475,9 +457,10 @@ pub fn emit(config: *const Configuration, alloc: std.mem.Allocator) Result {
                 .col = @intCast(col),
             };
 
-            inline for (blocks.tile_blocks) |meta| {
-                if (config.model.tileType(tile) == meta.tile.?)
-                    e.emitTileBlock(meta, tile) catch common.oom();
+            const actual_t = config.model.tileType(tile);
+            inline for (common.TileType.configurable) |t| {
+                if (actual_t == t)
+                    e.emitTileBlock(blocks.forTile(t), tile) catch common.oom();
             }
         }
     }
@@ -485,7 +468,7 @@ pub fn emit(config: *const Configuration, alloc: std.mem.Allocator) Result {
     for (1..1 + config.model.tile_counts.get(.io)) |pin| {
         const tile = config.model.pinCoord(pin);
         std.debug.assert(config.model.tileType(tile) == .io);
-        e.emitTileBlock(blocks.io, tile) catch common.oom();
+        e.emitTileBlock(blocks.forTile(.io), tile) catch common.oom();
     }
 
     return .{

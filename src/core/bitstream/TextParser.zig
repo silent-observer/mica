@@ -52,9 +52,9 @@ fn parseBlock(p: *TextParser) !void {
     else if (std.mem.eql(u8, block, "switch"))
         try p.parseSwitchBlock()
     else blk: {
-        inline for (blocks.tile_blocks) |meta| {
-            if (std.mem.eql(u8, block, @tagName(meta.tile.?))) {
-                try p.parseTileBlock(meta);
+        inline for (common.TileType.configurable) |t| {
+            if (std.mem.eql(u8, block, @tagName(t))) {
+                try p.parseTileBlock(blocks.forTile(t));
                 break :blk;
             }
         }
@@ -115,24 +115,6 @@ const resets: std.StaticStringMap(u2) = .initComptime(.{
     .{ "RST3", 3 },
 });
 
-fn storeInput(cfg: anytype, in: anytype, code: u5) void {
-    switch (@typeInfo(@TypeOf(in))) {
-        // LogicInput / IoInput: flat EnumArray on the tile struct
-        .@"enum" => cfg.inputs.set(in, code),
-        // BramInput / DspInput: one field per tag, array index in the payload
-        .@"union" => switch (in) {
-            inline else => |idx, tag| {
-                const f = &@field(cfg, @tagName(tag));
-                if (@TypeOf(idx) == void)
-                    f.* = @intCast(code)
-                else
-                    f[idx] = @intCast(code);
-            },
-        },
-        else => @compileError("bad Input type: " ++ @typeName(@TypeOf(in))),
-    }
-}
-
 fn parseCommands(
     p: *TextParser,
     comptime meta: blocks.Metadata,
@@ -148,7 +130,7 @@ fn parseCommands(
             if (meta.tile) |t| {
                 const cxt = p.config.?.model.inputCxt(t, tile);
                 const in: t.Input(), const code: u5 = try p.p.parseInputCommand(t, cxt);
-                storeInput(cfg, in, code);
+                Configuration.setInput(cfg, in, code);
                 continue :outer;
             } else {
                 try p.p.err("Block '{s}' can't have inputs!", .{word});

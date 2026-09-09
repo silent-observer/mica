@@ -181,12 +181,48 @@ pub fn deinit(c: Configuration, alloc: std.mem.Allocator) void {
 
 pub fn For(comptime t: common.TileType) type {
     return switch (t) {
-        .inert => void,
+        .inert => @compileError("inert tiles carry no configuration"),
         .logic => Logic,
         .bram => Bram,
         .dsp => Dsp,
         .io => Io,
     };
+}
+
+// The two tile-input storage shapes, in one place because the parser and the
+// emitter have to agree on them: LogicInput / IoInput index a flat EnumArray,
+// while BramInput / DspInput name one field per tag with the array index in
+// the payload.
+pub fn getInput(cfg: anytype, in: anytype) u5 {
+    switch (@typeInfo(@TypeOf(in))) {
+        .@"enum" => return cfg.inputs.get(in),
+        .@"union" => switch (in) {
+            inline else => |idx, tag| {
+                const f = &@field(cfg, @tagName(tag));
+                if (@TypeOf(idx) == void)
+                    return f.*
+                else
+                    return f[idx];
+            },
+        },
+        else => @compileError("bad Input type: " ++ @typeName(@TypeOf(in))),
+    }
+}
+
+pub fn setInput(cfg: anytype, in: anytype, code: u5) void {
+    switch (@typeInfo(@TypeOf(in))) {
+        .@"enum" => cfg.inputs.set(in, code),
+        .@"union" => switch (in) {
+            inline else => |idx, tag| {
+                const f = &@field(cfg, @tagName(tag));
+                if (@TypeOf(idx) == void)
+                    f.* = @intCast(code)
+                else
+                    f[idx] = @intCast(code);
+            },
+        },
+        else => @compileError("bad Input type: " ++ @typeName(@TypeOf(in))),
+    }
 }
 
 pub fn getSwitch(c: *const Configuration, sw: common.SwitchCoords) *Switch {
@@ -203,7 +239,7 @@ pub fn getBramData(c: *const Configuration, tile: common.TileCoords) *Bram.Data 
 
 pub fn get(c: *const Configuration, comptime t: common.TileType, tile: common.TileCoords) *For(t) {
     return switch (t) {
-        .inert => {},
+        .inert => @compileError("inert tiles carry no configuration"),
         .logic => c.getLogic(tile),
         .bram => c.getBram(tile),
         .dsp => c.getDsp(tile),

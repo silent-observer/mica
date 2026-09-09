@@ -30,7 +30,7 @@ pub const TileType = enum {
 
     pub fn Input(t: TileType) type {
         return switch (t) {
-            .inert => void,
+            .inert => @compileError("inert tiles carry no configuration"),
             .logic => LogicInput,
             .bram => BramInput,
             .dsp => DspInput,
