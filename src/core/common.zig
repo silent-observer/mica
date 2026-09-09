@@ -550,6 +550,13 @@ pub const IoInput = enum(u8) {
         return @intFromEnum(in);
     }
 
+    pub const WIDTHS: std.EnumArray(IoInput, usize) = .init(.{
+        .o = 1,
+        .e = 1,
+        .ie = 1,
+        .oe = 1,
+        .ee = 1,
+    });
     pub const TOTAL = 5;
 
     pub fn format(
@@ -582,6 +589,18 @@ pub const LogicInput = enum(u8) {
         return @intFromEnum(in);
     }
 
+    pub const WIDTHS: std.EnumArray(LogicInput, usize) = .init(.{
+        .a1 = 1,
+        .b1 = 1,
+        .c1 = 1,
+        .d1 = 1,
+        .ce1 = 1,
+        .a2 = 1,
+        .b2 = 1,
+        .c2 = 1,
+        .d2 = 1,
+        .ce2 = 1,
+    });
     pub const TOTAL = 10;
 
     pub fn format(
@@ -641,7 +660,14 @@ pub const BramInput = union(enum) {
         return .{ .di = x };
     }
 
-    pub const TOTAL = 12 + 12 + 16 + 2;
+    pub const WIDTHS: std.EnumArray(std.meta.Tag(BramInput), usize) = .init(.{
+        .a1 = 12,
+        .a2 = 12,
+        .di = 16,
+        .we1 = 1,
+        .we2 = 1,
+    });
+    pub const TOTAL = 12 + 12 + 16 + 1 + 1;
 
     pub fn format(
         self: @This(),
@@ -698,6 +724,14 @@ pub const DspInput = union(enum) {
         return .{ .c = x };
     }
 
+    pub const WIDTHS: std.EnumArray(std.meta.Tag(DspInput), usize) = .init(.{
+        .a = 8,
+        .b = 8,
+        .c = 16,
+        .md = 1,
+        .ad = 1,
+        .we = 1,
+    });
     pub const TOTAL = 8 + 8 + 16 + 3;
 
     pub fn format(

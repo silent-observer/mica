@@ -318,10 +318,27 @@ fn emitSwitchBlock(e: *TextEmitter, sw: common.SwitchCoords) !void {
     try w.writeAll("}\n\n");
 }
 
+fn getInput(t: anytype, in: anytype) u5 {
+    switch (@typeInfo(@TypeOf(in))) {
+        // LogicInput / IoInput: flat EnumArray on the tile struct
+        .@"enum" => return t.inputs.get(in),
+        // BramInput / DspInput: one field per tag, array index in the payload
+        .@"union" => switch (in) {
+            inline else => |idx, tag| {
+                const f = &@field(t, @tagName(tag));
+                if (@TypeOf(idx) == void)
+                    return f.*
+                else
+                    return f[idx];
+            },
+        },
+        else => @compileError("bad Input type: " ++ @typeName(@TypeOf(in))),
+    }
+}
+
 fn emitCommands(
     e: *TextEmitter,
-    comptime table: anytype,
-    comptime input_table: anytype,
+    comptime table: []const text_tables.Field,
     comptime T: type,
     comptime Input: type,
     comptime indent: []const u8,
@@ -331,29 +348,23 @@ fn emitCommands(
     const w = &e.w.writer;
     try w.writeAll("{\n");
 
-    inline for (table) |row| {
-        const expected_word: []const u8 = row.@"0";
-        const width: usize = row.@"1";
-        const config_field: []const u8 = row.@"2";
-        const value_kind: text_tables.ValueKind = row.@"3";
-
-        if (value_kind == .reg) {
+    inline for (table) |f| {
+        if (f.kind == .reg) {
             for (0..2) |i| {
                 const reg: *const Configuration.Logic.Reg = &t.*.regs[i];
                 if (std.meta.eql(reg.*, std.mem.zeroes(Configuration.Logic.Reg)))
                     continue;
                 try w.print("    reg {} ", .{i + 1});
                 try e.emitCommands(
-                    text_tables.reg_table,
-                    .{},
+                    &text_tables.reg_table,
                     Configuration.Logic.Reg,
-                    common.LogicInput,
+                    void,
                     "    ",
                     tile,
                     reg,
                 );
             }
-        } else if (value_kind == .data) blk: {
+        } else if (f.kind == .data) blk: {
             const data = e.config.getBramData(tile);
             if (std.mem.allEqual(u16, &data.data, 0))
                 break :blk;
@@ -388,28 +399,28 @@ fn emitCommands(
             }
             try w.writeAll("    }\n");
         } else {
-            for (0..@max(1, width)) |index| {
-                const v = if (width != 0)
-                    @field(t.*, config_field)[index]
+            for (0..f.width) |index| {
+                const v = if (f.width != 1)
+                    @field(t.*, f.field)[index]
                 else
-                    @field(t.*, config_field);
+                    @field(t.*, f.field);
 
                 // WIDTH has to precede `data {}` (§"Textual format"), so a
                 // width of 1 - which encodes as 0 - is written out anyway when
                 // the tile has data that it decides how to read.
-                const zero_is_meaningful = if (value_kind == .width)
+                const zero_is_meaningful = if (f.kind == .width)
                     !std.mem.allEqual(u16, &e.config.getBramData(tile).data, 0)
                 else
                     false;
                 if (!zero_is_meaningful and std.meta.eql(v, std.mem.zeroes(@TypeOf(v))))
                     continue;
 
-                try w.writeAll(indent ++ "    " ++ expected_word);
-                if (width != 0)
+                try w.writeAll(indent ++ "    " ++ f.word);
+                if (f.width != 1)
                     try w.print("[{}]", .{index});
                 try w.writeAll(" = ");
 
-                switch (value_kind) {
+                switch (f.kind) {
                     .reg, .data => unreachable,
                     .bit => try w.print("{}", .{@intFromBool(v)}),
                     .bin => |IntType| {
@@ -442,70 +453,68 @@ fn emitCommands(
         }
     }
 
-    inline for (input_table) |row| {
-        const expected_input_word: []const u8 = comptime row.@"0";
-        const input_width: usize = comptime row.@"1";
-        const config_field: []const u8 = comptime row.@"2";
-        const input_variant: []const u8 = comptime row.@"3";
-        for (0..@max(1, input_width)) |index| {
-            const in = if (@typeInfo(Input) == .@"enum")
-                @field(Input, input_variant)
-            else if (input_width != 0)
-                @unionInit(Input, input_variant, @intCast(index))
-            else
-                @unionInit(Input, input_variant, {});
+    if (Input != void) {
+        inline for (std.meta.fields(Input)) |f| {
+            const expected_input_word: [f.name.len]u8 = comptime blk: {
+                var buf: [f.name.len]u8 = undefined;
+                _ = std.ascii.upperString(&buf, f.name);
+                break :blk buf;
+            };
 
-            const code: u5 = if (input_width != 0)
-                // Array
-                @intCast(@field(t.*, config_field)[index])
-            else if (@typeInfo(@TypeOf(@field(t.*, config_field))) == .int)
-                // Plain code
-                @field(t.*, config_field)
-            else
-                // Assume EnumArray
-                @field(t.*, config_field).get(in);
+            const input_width: usize = Input.WIDTHS.get(@field(Input, f.name));
+            const input_variant: []const u8 = f.name;
+            for (0..@max(1, input_width)) |index| {
+                const in = if (@typeInfo(Input) == .@"enum")
+                    @field(Input, input_variant)
+                else if (f.type == void)
+                    @unionInit(Input, input_variant, {})
+                else
+                    @unionInit(Input, input_variant, @intCast(index));
 
-            if (code == 0) continue;
+                const code = getInput(t, in);
 
-            try w.writeAll(indent ++ "    in " ++ expected_input_word);
-            if (input_width != 0)
-                try w.print("[{}]", .{index});
-            try w.writeAll(" = ");
+                if (code == 0) continue;
 
-            const grid = e.config.model.grid;
-            const block_name = if (Input == common.LogicInput)
-                "logic"
-            else if (Input == common.BramInput)
-                "bram"
-            else if (Input == common.DspInput)
-                "dsp"
-            else if (Input == common.IoInput)
-                "io"
-            else
-                @compileError("Incorrect Input type");
+                try w.writeAll(indent ++ "    in " ++ expected_input_word);
+                if (input_width != 1)
+                    try w.print("[{}]", .{index});
+                try w.writeAll(" = ");
 
-            const src = if (Input == common.LogicInput)
-                wire_codes.resolveLogicInput(tile, in, code, grid)
-            else if (Input == common.BramInput)
-                wire_codes.resolveBramInput(tile, in, code, grid)
-            else if (Input == common.DspInput)
-                wire_codes.resolveDspInput(tile, in, code, grid)
-            else
-                wire_codes.resolveIoInput(
-                    tile,
-                    in,
-                    e.config.model.ioWireSide(tile),
-                    code,
-                    grid,
-                );
+                const grid = e.config.model.grid;
+                const block_name = if (Input == common.LogicInput)
+                    "logic"
+                else if (Input == common.BramInput)
+                    "bram"
+                else if (Input == common.DspInput)
+                    "dsp"
+                else if (Input == common.IoInput)
+                    "io"
+                else
+                    @compileError("Incorrect Input type");
 
-            if (src == .code)
-                e.warn(
-                    block_name ++ " ({},{}) in {f}: code {} names a wire that does not exist here",
-                    .{ tile.row, tile.col, in, code },
-                );
+                const src = if (Input == common.LogicInput)
+                    wire_codes.resolveLogicInput(tile, in, code, grid)
+                else if (Input == common.BramInput)
+                    wire_codes.resolveBramInput(tile, in, code, grid)
+                else if (Input == common.DspInput)
+                    wire_codes.resolveDspInput(tile, in, code, grid)
+                else
+                    wire_codes.resolveIoInput(
+                        tile,
+                        in,
+                        e.config.model.ioWireSide(tile),
+                        code,
+                        grid,
+                    );
 
-            try w.print("{f};\n", .{src});
+                if (src == .code)
+                    e.warn(
+                        block_name ++ " ({},{}) in {f}: code {} names a wire that does not exist here",
+                        .{ tile.row, tile.col, in, code },
+                    );
+
+                try w.print("{f};\n", .{src});
+            }
         }
     }
 
@@ -518,8 +527,7 @@ fn emitGlobalBlock(e: *TextEmitter) !void {
     const w = &e.w.writer;
     try w.writeAll("global ");
     try e.emitCommands(
-        text_tables.global_table,
-        .{},
+        &text_tables.global_table,
         Configuration.Global,
         void,
         "",
@@ -535,8 +543,7 @@ fn emitLogicBlock(e: *TextEmitter, tile: common.TileCoords) !void {
     const w = &e.w.writer;
     try w.print("logic ({}, {}) ", .{ tile.row, tile.col });
     try e.emitCommands(
-        text_tables.logic_table,
-        text_tables.logic_inputs_table,
+        &text_tables.logic_table,
         Configuration.Logic,
         common.LogicInput,
         "",
@@ -556,8 +563,7 @@ fn emitBramBlock(e: *TextEmitter, tile: common.TileCoords) !void {
     const w = &e.w.writer;
     try w.print("bram ({}, {}) ", .{ tile.row, tile.col });
     try e.emitCommands(
-        text_tables.bram_table,
-        text_tables.bram_inputs_table,
+        &text_tables.bram_table,
         Configuration.Bram,
         common.BramInput,
         "",
@@ -574,8 +580,7 @@ fn emitDspBlock(e: *TextEmitter, tile: common.TileCoords) !void {
     const w = &e.w.writer;
     try w.print("dsp ({}, {}) ", .{ tile.row, tile.col });
     try e.emitCommands(
-        text_tables.dsp_table,
-        text_tables.dsp_inputs_table,
+        &text_tables.dsp_table,
         Configuration.Dsp,
         common.DspInput,
         "",
@@ -591,8 +596,7 @@ fn emitIoBlock(e: *TextEmitter, tile: common.TileCoords) !void {
     const w = &e.w.writer;
     try w.print("io ({}, {}) ", .{ tile.row, tile.col });
     try e.emitCommands(
-        text_tables.io_table,
-        text_tables.io_inputs_table,
+        &text_tables.io_table,
         Configuration.Io,
         common.IoInput,
         "",

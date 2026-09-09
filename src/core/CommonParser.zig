@@ -9,7 +9,6 @@ const CommonParser = @This();
 alloc: std.mem.Allocator,
 input: []const u8,
 pos: usize,
-prev_pos: usize,
 errorText: ?[]const u8,
 
 pub fn init(input: []const u8, alloc: std.mem.Allocator) CommonParser {
@@ -17,9 +16,16 @@ pub fn init(input: []const u8, alloc: std.mem.Allocator) CommonParser {
         .alloc = alloc,
         .input = input,
         .pos = 0,
-        .prev_pos = 0,
         .errorText = null,
     };
+}
+
+const Mark = enum(usize) { _ };
+pub fn mark(p: *const CommonParser) Mark {
+    return @enumFromInt(p.pos);
+}
+pub fn reset(p: *CommonParser, m: Mark) void {
+    p.pos = @intFromEnum(m);
 }
 
 pub fn peek(p: *const CommonParser, i: usize) ?u8 {
@@ -71,12 +77,7 @@ pub fn expect(p: *CommonParser, expected: u8) !void {
     p.skipWhitespace();
     const c = p.peek(0) orelse try p.err("Expected '{c}', but got end of file", .{expected});
     if (c != expected) return try p.err("Expected '{c}', but got '{c}'", .{ expected, c });
-    p.prev_pos = p.pos;
     p.pos += 1;
-}
-
-pub fn undo(p: *CommonParser) void {
-    p.pos = p.prev_pos;
 }
 
 pub fn checkEof(p: *CommonParser) bool {
@@ -85,15 +86,25 @@ pub fn checkEof(p: *CommonParser) bool {
 }
 
 pub fn parseWord(p: *CommonParser) ![]const u8 {
+    return p.parseWordExtra("_");
+}
+
+pub fn parseWordExtra(p: *CommonParser, comptime extra: []const u8) ![]const u8 {
     p.skipWhitespace();
     if (p.eof())
         try p.err("Expected a word, but got end of file", .{});
     if (!std.ascii.isAlphabetic(p.peek(0).?))
         try p.err("Expected a word, but got '{c}'", .{p.peek(0).?});
     const start = p.pos;
-    p.prev_pos = p.pos;
     while (p.peek(0)) |c| {
-        if (!std.ascii.isAlphanumeric(c) and c != '_') break;
+        var ok = false;
+        if (std.ascii.isAlphanumeric(c)) ok = true;
+        inline for (extra) |ext| {
+            if (c == ext)
+                ok = true;
+        }
+        if (!ok) break;
+
         p.pos += 1;
     }
     const end = p.pos;
@@ -112,7 +123,6 @@ pub fn parseNumber(p: *CommonParser, comptime T: type) !T {
     if (!std.ascii.isDigit(p.peek(0).?))
         try p.err("Expected a number, but got '{c}'", .{p.peek(0).?});
     const start = p.pos;
-    p.prev_pos = p.pos;
     while (p.peek(0)) |c| {
         if (std.mem.countScalar(u8, "0123456789ABCDEFabcdef_xb", c) == 0) break;
         p.pos += 1;
@@ -136,7 +146,6 @@ pub fn parseHexNumber(p: *CommonParser, comptime T: type) !T {
     if (p.eof())
         try p.err("Expected a number, but got end of file", .{});
     const start = p.pos;
-    p.prev_pos = p.pos;
     while (p.peek(0)) |c| {
         if (std.mem.countScalar(u8, "0123456789ABCDEFabcdef", c) == 0) break;
         p.pos += 1;
@@ -156,12 +165,11 @@ pub fn parseHexNumber(p: *CommonParser, comptime T: type) !T {
 pub fn parseString(p: *CommonParser) ![]const u8 {
     p.skipWhitespace();
     const start = p.pos;
-    p.prev_pos = p.pos;
     try p.expect('"');
     while (!p.eof()) {
-        if (p.check('"')) {
+        if (p.peek(0) == '"') {
             p.pos += 1;
-            if (p.check('"'))
+            if (p.peek(0) == '"')
                 p.pos += 1
             else
                 break;
@@ -184,21 +192,61 @@ pub fn parseDeviceName(p: *CommonParser) ![]const u8 {
     return str;
 }
 
-pub fn parseTileCoords(p: *CommonParser) !common.TileCoords {
+pub fn parseTileCoords(p: *CommonParser, model: *const DeviceModel) !common.TileCoords {
     try p.expect('(');
     const row = try p.parseNumber(u32);
     try p.expect(',');
     const col = try p.parseNumber(u32);
     try p.expect(')');
+    if (row >= model.grid.rows)
+        try p.err(
+            "Model '{s}' only has {} rows, but tile ({}, {}) was used",
+            .{
+                model.model_id,
+                model.grid.rows,
+                row,
+                col,
+            },
+        );
+    if (col >= model.grid.cols)
+        try p.err(
+            "Model '{s}' only has {} columns, but tile ({}, {}) was used",
+            .{
+                model.model_id,
+                model.grid.cols,
+                row,
+                col,
+            },
+        );
     return .{ .row = row, .col = col };
 }
 
-pub fn parseSwitchCoords(p: *CommonParser) !common.SwitchCoords {
+pub fn parseSwitchCoords(p: *CommonParser, model: *const DeviceModel) !common.SwitchCoords {
     try p.expect('(');
     const row = try p.parseNumber(u32);
     try p.expect(',');
     const col = try p.parseNumber(u32);
     try p.expect(')');
+    if (row >= model.grid.vertexRows())
+        try p.err(
+            "Model '{s}' only has {} switch rows, but tile ({}, {}) was used",
+            .{
+                model.model_id,
+                model.grid.vertexRows(),
+                row,
+                col,
+            },
+        );
+    if (col >= model.grid.vertexCols())
+        try p.err(
+            "Model '{s}' only has {} switch columns, but tile ({}, {}) was used",
+            .{
+                model.model_id,
+                model.grid.vertexCols(),
+                row,
+                col,
+            },
+        );
     return .{ .row = row, .col = col };
 }
 
@@ -248,9 +296,10 @@ const logic_outputs: std.StaticStringMap(wire_codes.LogicOutput) = .initComptime
 });
 
 pub fn parseSwitchWire(p: *CommonParser) !?common.SwitchWire {
+    const m = p.mark();
     const side_word = try p.parseWord();
     const side = sides.get(side_word) orelse {
-        p.undo();
+        p.reset(m);
         return null;
     };
     try p.expect('.');
@@ -283,9 +332,10 @@ pub fn parseSwitchWire(p: *CommonParser) !?common.SwitchWire {
 }
 
 pub fn parseDirectionalWire1x1(p: *CommonParser) !?common.DirectionalWire1x1 {
+    const m = p.mark();
     const side_word = try p.parseWord();
     const side = sides.get(side_word) orelse {
-        p.undo();
+        p.reset(m);
         return null;
     };
 
@@ -341,9 +391,10 @@ pub fn parseDirectionalWire1x1(p: *CommonParser) !?common.DirectionalWire1x1 {
 }
 
 pub fn parseDirectionalWire4x1(p: *CommonParser) !?common.DirectionalWire4x1 {
+    const m = p.mark();
     const side_word = try p.parseWord();
     const side = big_edges.get(side_word) orelse {
-        p.undo();
+        p.reset(m);
         return null;
     };
 
@@ -400,10 +451,11 @@ pub fn parseDirectionalWire4x1(p: *CommonParser) !?common.DirectionalWire4x1 {
 }
 
 pub fn parseSwitchSrc(p: *CommonParser, sw: common.SwitchCoords, model: *const DeviceModel) !wire_codes.SwitchSinkSrc {
+    const m = p.mark();
     if (std.mem.eql(u8, try p.parseWord(), "code")) {
         const raw = try p.parseNumber(u4);
         return .{ .code = raw };
-    } else p.undo();
+    } else p.reset(m);
 
     if (try p.parseSwitchWire()) |wire|
         return .{ .wire = wire };
@@ -510,9 +562,9 @@ pub fn parseSwitchSrc(p: *CommonParser, sw: common.SwitchCoords, model: *const D
             } };
         } else try p.err(
             "Trying to access unknown output '{s}'",
-            .{word},
+            .{output_word},
         );
-    } else p.undo();
+    } else p.reset(m);
 
     try p.err(
         "Invalid switch sink: '{s}'",
@@ -532,15 +584,16 @@ pub fn parseLogicInputSrc(p: *CommonParser, in: common.LogicInput) !u5 {
     if (try p.parseInputConstant()) |c|
         return wire_codes.encodeLogicInput(in, if (c == 0) .zero else .one).?;
 
+    const m = p.mark();
     if (std.mem.eql(u8, try p.parseWord(), "code"))
         return try p.parseNumber(u5)
     else
-        p.undo();
+        p.reset(m);
 
     if (logic_outputs.get(try p.parseWord())) |lo|
         return wire_codes.encodeLogicInput(in, .{ .local = lo }).?
     else
-        p.undo();
+        p.reset(m);
 
     const wire = try p.parseDirectionalWire1x1() orelse
         try p.err("Expected a logic tile input like N[R].L1[3]", .{});
@@ -552,12 +605,13 @@ pub fn parseBramInputSrc(p: *CommonParser, in: common.BramInput) !u5 {
     if (try p.parseInputConstant()) |c|
         return wire_codes.encodeBramInput(in, if (c == 0) .zero else .one).?;
 
+    const m = p.mark();
     if (std.mem.eql(u8, try p.parseWord(), "code")) {
         return switch (in) {
             .a1, .a2, .di => try p.parseNumber(u4),
             .we1, .we2 => try p.parseNumber(u5),
         };
-    } else p.undo();
+    } else p.reset(m);
 
     const wire = try p.parseDirectionalWire4x1() orelse
         try p.err("Expected a BRAM tile input like H1[R].L1[3]", .{});
@@ -569,10 +623,11 @@ pub fn parseDspInputSrc(p: *CommonParser, in: common.DspInput) !u5 {
     if (try p.parseInputConstant()) |c|
         return wire_codes.encodeDspInput(in, if (c == 0) .zero else .one).?;
 
+    const m = p.mark();
     if (std.mem.eql(u8, try p.parseWord(), "code"))
         return try p.parseNumber(u5)
     else
-        p.undo();
+        p.reset(m);
 
     const wire = try p.parseDirectionalWire4x1() orelse
         try p.err("Expected a DSP tile input like H1[R].L1[3]", .{});
@@ -584,13 +639,116 @@ pub fn parseIoInputSrc(p: *CommonParser, side: common.Side, in: common.IoInput) 
     if (try p.parseInputConstant()) |c|
         return wire_codes.encodeIoInput(in, side, if (c == 0) .zero else .one).?;
 
+    const m = p.mark();
     if (std.mem.eql(u8, try p.parseWord(), "code"))
         return try p.parseNumber(u5)
     else
-        p.undo();
+        p.reset(m);
 
     const wire = try p.parseDirectionalWire1x1() orelse
         try p.err("Expected an IO tile input like N[R].L1[3]", .{});
     return wire_codes.encodeIoInput(in, side, .{ .wire = wire }) orelse
         try p.err("For input {f}, wire {f} is not accessible", .{ in, wire });
+}
+
+pub fn parseInputCommand(
+    p: *CommonParser,
+    comptime Input: type,
+    io_side: common.Side,
+) !struct { Input, u5 } {
+    // 'in' already parsed
+    const input_word = try p.parseWord();
+    inline for (std.meta.fields(Input)) |f| {
+        const expected_input_word: [f.name.len]u8 = comptime blk: {
+            var buf: [f.name.len]u8 = undefined;
+            _ = std.ascii.upperString(&buf, f.name);
+            break :blk buf;
+        };
+
+        const input_width: usize = Input.WIDTHS.get(@field(Input, f.name));
+        const input_variant: []const u8 = f.name;
+        if (std.mem.eql(u8, input_word, &expected_input_word)) {
+            const index: ?u4 = if (@typeInfo(Input) == .@"union" and f.type != void) blk: { // Array
+                try p.expect('[');
+                const index = try p.parseNumber(u4);
+                try p.expect(']');
+                if (index >= input_width)
+                    try p.err(
+                        "Input {s} only has width {}, tried to access {s}[{}]",
+                        .{ input_word, input_width, input_word, index },
+                    );
+                break :blk index;
+            } else null;
+
+            try p.expect('=');
+
+            const in = if (@typeInfo(Input) == .@"enum")
+                @field(Input, input_variant)
+            else if (f.type == void)
+                @unionInit(Input, input_variant, {})
+            else
+                @unionInit(Input, input_variant, @intCast(index.?));
+
+            const code: u5 = if (Input == common.LogicInput)
+                try p.parseLogicInputSrc(in)
+            else if (Input == common.BramInput)
+                try p.parseBramInputSrc(in)
+            else if (Input == common.DspInput)
+                try p.parseDspInputSrc(in)
+            else if (Input == common.IoInput)
+                try p.parseIoInputSrc(io_side, in)
+            else
+                @compileError("Incorrect Input type " ++ @typeName(Input));
+
+            try p.expect(';');
+            return .{ in, code };
+        }
+    }
+
+    const tile_name = if (Input == common.LogicInput)
+        "logic"
+    else if (Input == common.BramInput)
+        "BRAM"
+    else if (Input == common.DspInput)
+        "DSP"
+    else if (Input == common.IoInput)
+        "IO"
+    else
+        @compileError("Incorrect Input type " ++ @typeName(Input));
+
+    try p.err(
+        "No such input '{s}' for {s} tile",
+        .{
+            input_word,
+            tile_name,
+        },
+    );
+}
+
+pub fn parseLogicInputCommand(p: *CommonParser) !struct { common.LogicInput, u5 } {
+    return try p.parseInputCommand(
+        common.LogicInput,
+        undefined,
+    );
+}
+
+pub fn parseBramInputCommand(p: *CommonParser) !struct { common.BramInput, u5 } {
+    return try p.parseInputCommand(
+        common.BramInput,
+        undefined,
+    );
+}
+
+pub fn parseDspInputCommand(p: *CommonParser) !struct { common.DspInput, u5 } {
+    return try p.parseInputCommand(
+        common.DspInput,
+        undefined,
+    );
+}
+
+pub fn parseIoInputCommand(p: *CommonParser, side: common.Side) !struct { common.IoInput, u5 } {
+    return try p.parseInputCommand(
+        common.IoInput,
+        side,
+    );
 }
