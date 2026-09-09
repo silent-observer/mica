@@ -619,6 +619,39 @@ test "text: errors are reported with a line and column" {
             .text = "format 1;\ndevice \"M1/S\";\nbram (1, 9) { data { 000: 1; } }\n",
             .err = "3:20: In BRAM block, WIDTH must be specified before data",
         },
+        .{
+            .text = "format 1;\ndevice \"M1/S\";\nlogic (99, 1) {}\n",
+            .err = "3:15: Model 'M1/S' only has 50 tile rows, but tile (99, 1) was used",
+        },
+        .{
+            .text = "format 1;\ndevice \"M1/S\";\nswitch (99, 1) {}\n",
+            .err = "3:16: Model 'M1/S' only has 49 switch rows, but tile (99, 1) was used",
+        },
+        .{
+            .text = "format 1;\ndevice \"M1/S\";\nswitch (0, 8) { N.L1[0] = SE.DO[7]; }\n",
+            .err = "3:36: Trying to access output DO[7] at tile (0,8).SE, " ++
+                "but it is cell #0 in Block RAM, which only has outputs DO[0...3]",
+        },
+        .{
+            .text = "format 1;\ndevice \"M1/S",
+            .err = "2:14: Unterminated string",
+        },
+        // BRAM address and data inputs hold a 4-bit code, unlike every other
+        // tile input (§"Connection boxes"); WE1 alongside gets the full 5.
+        .{
+            .text = "format 1;\ndevice \"M1/S\";\nbram (1, 9) { in A1[0] = code 16; }\n",
+            .err = "3:34: Expected a 4-bit number, but got '16', which needs 5 bits",
+        },
+        // The legal directions of a 4x1 edge come from its orientation, not
+        // from a side's turn algebra.
+        .{
+            .text = "format 1;\ndevice \"M1/S\";\nbram (1, 9) { in A1[0] = H1[U].L1[0]; }\n",
+            .err = "3:32: Wrong direction H1[U], for the side H1 only left and right are possible",
+        },
+        .{
+            .text = "format 1;\ndevice \"M1/S\";\nbram (1, 9) { in A1[0] = W0[R].L1[0]; }\n",
+            .err = "3:32: Wrong direction W0[R], for the side W0 only up and down are possible",
+        },
     }) |case| {
         const r = TextParser.parse(case.text, alloc);
         defer r.deinit(alloc);

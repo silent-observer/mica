@@ -7,11 +7,6 @@ pub const Metadata = struct {
     Config: type,
     table: []const Field,
 
-    // Only actual tiles can have inputs
-    pub fn hasInputs(m: Metadata) bool {
-        return m.tile != null;
-    }
-
     pub fn name(m: Metadata) []const u8 {
         if (m.tile) |t| return @tagName(t);
 

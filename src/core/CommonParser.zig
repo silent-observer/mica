@@ -111,25 +111,25 @@ pub fn parseWordExtra(p: *CommonParser, comptime extra: []const u8) ![]const u8 
     return p.input[start..end];
 }
 
-pub fn parseNumber(p: *CommonParser, comptime T: type) !T {
-    if (T == bool)
-        return try p.parseNumber(u1) > 0;
-
+/// Scans the digits `chars` accepts, parses them in `base`, and checks the
+/// result fits `T`. `base` 0 lets the `0x`/`0b` prefix pick it.
+fn parseDigits(
+    p: *CommonParser,
+    comptime T: type,
+    comptime chars: []const u8,
+    comptime base: u8,
+    comptime what: []const u8,
+) !T {
     comptime std.debug.assert(@typeInfo(T) == .int);
     comptime std.debug.assert(@typeInfo(T).int.signedness == .unsigned);
-    p.skipWhitespace();
-    if (p.eof())
-        try p.err("Expected a number, but got end of file", .{});
-    if (!std.ascii.isDigit(p.peek(0).?))
-        try p.err("Expected a number, but got '{c}'", .{p.peek(0).?});
     const start = p.pos;
     while (p.peek(0)) |c| {
-        if (std.mem.countScalar(u8, "0123456789ABCDEFabcdef_xb", c) == 0) break;
+        if (std.mem.countScalar(u8, chars, c) == 0) break;
         p.pos += 1;
     }
-    const end = p.pos;
-    const x = std.fmt.parseInt(u64, p.input[start..end], 0) catch
-        try p.err("Expected a number, but got '{s}'", .{p.input[start..end]});
+    const text = p.input[start..p.pos];
+    const x = std.fmt.parseInt(u64, text, base) catch
+        try p.err("Expected " ++ what ++ ", but got '{s}'", .{text});
     const actual_bits: usize = if (x == 0) 1 else std.math.log2_int(u64, x) + 1;
     if (actual_bits > @typeInfo(T).int.bits)
         try p.err(
@@ -139,43 +139,39 @@ pub fn parseNumber(p: *CommonParser, comptime T: type) !T {
     return @intCast(x);
 }
 
-pub fn parseHexNumber(p: *CommonParser, comptime T: type) !T {
-    comptime std.debug.assert(@typeInfo(T) == .int);
-    comptime std.debug.assert(@typeInfo(T).int.signedness == .unsigned);
+pub fn parseNumber(p: *CommonParser, comptime T: type) !T {
+    if (T == bool)
+        return try p.parseNumber(u1) > 0;
+
     p.skipWhitespace();
     if (p.eof())
         try p.err("Expected a number, but got end of file", .{});
-    const start = p.pos;
-    while (p.peek(0)) |c| {
-        if (std.mem.countScalar(u8, "0123456789ABCDEFabcdef", c) == 0) break;
-        p.pos += 1;
-    }
-    const end = p.pos;
-    const x = std.fmt.parseInt(u64, p.input[start..end], 16) catch
-        try p.err("Expected a hex number, but got '{s}'", .{p.input[start..end]});
-    const actual_bits: usize = if (x == 0) 1 else std.math.log2_int(u64, x) + 1;
-    if (actual_bits > @typeInfo(T).int.bits)
-        try p.err(
-            "Expected a {}-bit number, but got '{}', which needs {} bits",
-            .{ @typeInfo(T).int.bits, x, actual_bits },
-        );
-    return @intCast(x);
+    if (!std.ascii.isDigit(p.peek(0).?))
+        try p.err("Expected a number, but got '{c}'", .{p.peek(0).?});
+    return try p.parseDigits(T, "0123456789ABCDEFabcdef_xb", 0, "a number");
+}
+
+pub fn parseHexNumber(p: *CommonParser, comptime T: type) !T {
+    p.skipWhitespace();
+    if (p.eof())
+        try p.err("Expected a number, but got end of file", .{});
+    return try p.parseDigits(T, "0123456789ABCDEFabcdef", 16, "a hex number");
 }
 
 pub fn parseString(p: *CommonParser) ![]const u8 {
     p.skipWhitespace();
     const start = p.pos;
     try p.expect('"');
-    while (!p.eof()) {
+    const end = while (!p.eof()) {
         if (p.peek(0) == '"') {
             p.pos += 1;
+            // A doubled quote is an escaped one, so the string continues.
             if (p.peek(0) == '"')
                 p.pos += 1
             else
-                break;
+                break p.pos;
         } else p.pos += 1;
-    }
-    const end = p.pos;
+    } else try p.err("Unterminated string", .{});
     return p.input[start + 1 .. end - 1];
 }
 
@@ -192,62 +188,40 @@ pub fn parseDeviceName(p: *CommonParser) ![]const u8 {
     return str;
 }
 
-pub fn parseTileCoords(p: *CommonParser, model: *const DeviceModel) !common.TileCoords {
+/// Parses `(row, col)` and range-checks it against the model. `C` picks which
+/// grid the coordinates address: tiles include the IO ring, switchboxes sit on
+/// its vertices, so the two have different bounds.
+fn parseCoords(p: *CommonParser, comptime C: type, model: *const DeviceModel) !C {
+    const rows, const cols, const what = switch (C) {
+        common.TileCoords => .{ model.grid.rows, model.grid.cols, "tile " },
+        common.SwitchCoords => .{ model.grid.vertexRows(), model.grid.vertexCols(), "switch " },
+        else => @compileError("not a coordinate type: " ++ @typeName(C)),
+    };
+
     try p.expect('(');
     const row = try p.parseNumber(u32);
     try p.expect(',');
     const col = try p.parseNumber(u32);
     try p.expect(')');
-    if (row >= model.grid.rows)
+    if (row >= rows)
         try p.err(
-            "Model '{s}' only has {} rows, but tile ({}, {}) was used",
-            .{
-                model.model_id,
-                model.grid.rows,
-                row,
-                col,
-            },
+            "Model '{s}' only has {} " ++ what ++ "rows, but tile ({}, {}) was used",
+            .{ model.model_id, rows, row, col },
         );
-    if (col >= model.grid.cols)
+    if (col >= cols)
         try p.err(
-            "Model '{s}' only has {} columns, but tile ({}, {}) was used",
-            .{
-                model.model_id,
-                model.grid.cols,
-                row,
-                col,
-            },
+            "Model '{s}' only has {} " ++ what ++ "columns, but tile ({}, {}) was used",
+            .{ model.model_id, cols, row, col },
         );
     return .{ .row = row, .col = col };
 }
 
+pub fn parseTileCoords(p: *CommonParser, model: *const DeviceModel) !common.TileCoords {
+    return try p.parseCoords(common.TileCoords, model);
+}
+
 pub fn parseSwitchCoords(p: *CommonParser, model: *const DeviceModel) !common.SwitchCoords {
-    try p.expect('(');
-    const row = try p.parseNumber(u32);
-    try p.expect(',');
-    const col = try p.parseNumber(u32);
-    try p.expect(')');
-    if (row >= model.grid.vertexRows())
-        try p.err(
-            "Model '{s}' only has {} switch rows, but tile ({}, {}) was used",
-            .{
-                model.model_id,
-                model.grid.vertexRows(),
-                row,
-                col,
-            },
-        );
-    if (col >= model.grid.vertexCols())
-        try p.err(
-            "Model '{s}' only has {} switch columns, but tile ({}, {}) was used",
-            .{
-                model.model_id,
-                model.grid.vertexCols(),
-                row,
-                col,
-            },
-        );
-    return .{ .row = row, .col = col };
+    return try p.parseCoords(common.SwitchCoords, model);
 }
 
 const sides: std.StaticStringMap(common.Side) = .initComptime(.{
@@ -331,10 +305,20 @@ pub fn parseSwitchWire(p: *CommonParser) !?common.SwitchWire {
     };
 }
 
-pub fn parseDirectionalWire1x1(p: *CommonParser) !?common.DirectionalWire1x1 {
+/// Parses a connection-box wire name like `N[R].L1[3]` (1x1 tiles) or
+/// `H2[R].L1[3]` (4x1 BRAM/DSP tiles). Returns null, having consumed nothing,
+/// when the leading word does not name an edge -- the caller then tries
+/// another alternative.
+fn parseDirectionalWire(p: *CommonParser, comptime W: type) !?W {
+    const edges, const example = switch (W) {
+        common.DirectionalWire1x1 => .{ sides, "N[R].L1[3]" },
+        common.DirectionalWire4x1 => .{ big_edges, "H2[R].L1[3]" },
+        else => @compileError("not a directional wire type: " ++ @typeName(W)),
+    };
+
     const m = p.mark();
     const side_word = try p.parseWord();
-    const side = sides.get(side_word) orelse {
+    const side = edges.get(side_word) orelse {
         p.reset(m);
         return null;
     };
@@ -344,27 +328,27 @@ pub fn parseDirectionalWire1x1(p: *CommonParser) !?common.DirectionalWire1x1 {
     try p.expect(']');
     const dir = dirs.get(dir_word) orelse
         try p.err(
-            "Expected a wire like N[R].L1[3], but got '{s}[{s}]'",
+            "Expected a wire like " ++ example ++ ", but got '{s}[{s}]'",
             .{ side_word, dir_word },
         );
-    if (dir != side.turnDir(.cw) and dir != side.turnDir(.ccw)) {
+    const legal = side.legalDirs();
+    if (dir != legal[0] and dir != legal[1])
         try p.err(
             "Wrong direction {s}[{s}], for the side {s} only {s} and {s} are possible",
             .{
                 side_word,
                 dir_word,
                 side_word,
-                @tagName(side.turnDir(.cw)),
-                @tagName(side.turnDir(.ccw)),
+                @tagName(legal[0]),
+                @tagName(legal[1]),
             },
         );
-    }
 
     try p.expect('.');
     const class_word = try p.parseWord();
     const class = classes.get(class_word) orelse
         try p.err(
-            "Expected a wire like N[R].L1[3], but got '{s}[{s}].{s}'",
+            "Expected a wire like " ++ example ++ ", but got '{s}[{s}].{s}'",
             .{ side_word, dir_word, class_word },
         );
     try p.expect('[');
@@ -382,7 +366,7 @@ pub fn parseDirectionalWire1x1(p: *CommonParser) !?common.DirectionalWire1x1 {
             },
         );
 
-    return common.DirectionalWire1x1{
+    return W{
         .class = class,
         .side = side,
         .dir = dir,
@@ -390,64 +374,57 @@ pub fn parseDirectionalWire1x1(p: *CommonParser) !?common.DirectionalWire1x1 {
     };
 }
 
+pub fn parseDirectionalWire1x1(p: *CommonParser) !?common.DirectionalWire1x1 {
+    return try p.parseDirectionalWire(common.DirectionalWire1x1);
+}
+
 pub fn parseDirectionalWire4x1(p: *CommonParser) !?common.DirectionalWire4x1 {
-    const m = p.mark();
-    const side_word = try p.parseWord();
-    const side = big_edges.get(side_word) orelse {
-        p.reset(m);
-        return null;
-    };
+    return try p.parseDirectionalWire(common.DirectionalWire4x1);
+}
 
+/// `DO[n]` on BRAM and `O[n]` on DSP name one of the four outputs of a cell in
+/// a 4x1 tile. The index runs across the whole tile, so it has to land in the
+/// quarter belonging to this corner's row (§"Switchboxes").
+fn parseBigTileOutput(
+    p: *CommonParser,
+    sw: common.SwitchCoords,
+    corner: common.Corner,
+    corner_word: []const u8,
+    tile_type: common.TileType,
+    comptime t: common.TileType,
+    comptime keyword: []const u8,
+    comptime long_name: []const u8,
+) !wire_codes.SwitchSinkSrc {
     try p.expect('[');
-    const dir_word = try p.parseWord();
+    const index = try p.parseNumber(u4);
     try p.expect(']');
-    const dir = dirs.get(dir_word) orelse
+    if (tile_type != t)
         try p.err(
-            "Expected a wire like H2[R].L1[3], but got '{s}[{s}]'",
-            .{ side_word, dir_word },
+            "Trying to access output " ++ keyword ++ "[{}], but tile ({},{}).{s} is {s}, not " ++ @tagName(t),
+            .{ index, sw.row, sw.col, corner_word, @tagName(tile_type) },
         );
-    const o = side.orientation();
-    if (dir != o.dirDesc() and dir != o.dirAsc()) {
-        try p.err(
-            "Wrong direction {s}[{s}], for the side {s} only {s} and {s} are possible",
-            .{
-                side_word,
-                dir_word,
-                side_word,
-                @tagName(o.dirDesc()),
-                @tagName(o.dirAsc()),
-            },
-        );
-    }
 
-    try p.expect('.');
-    const class_word = try p.parseWord();
-    const class = classes.get(class_word) orelse
+    const tile_idx = (sw.tile(corner).row - 1) % 4;
+    if (index / 4 != tile_idx)
         try p.err(
-            "Expected a wire like H2[R].L1[3], but got '{s}[{s}].{s}'",
-            .{ side_word, dir_word, class_word },
-        );
-    try p.expect('[');
-    const track = try p.parseNumber(u3);
-    try p.expect(']');
-
-    if (track >= class.tracksPerEdge())
-        try p.err(
-            "{f} wires only have {} tracks, tried to access {f}[{}]",
+            "Trying to access output " ++ keyword ++ "[{}] at tile ({},{}).{s}, " ++
+                "but it is cell #{} in " ++ long_name ++
+                ", which only has outputs " ++ keyword ++ "[{}...{}]",
             .{
-                class,
-                class.tracksPerEdge(),
-                class,
-                track,
+                index,
+                sw.row,
+                sw.col,
+                corner_word,
+                tile_idx,
+                tile_idx * 4,
+                tile_idx * 4 + 3,
             },
         );
 
-    return common.DirectionalWire4x1{
-        .class = class,
-        .side = side,
-        .dir = dir,
-        .track = .track(track),
-    };
+    return .{ .out = .{
+        .corner = corner,
+        .index = @intCast(index % 4),
+    } };
 }
 
 pub fn parseSwitchSrc(p: *CommonParser, sw: common.SwitchCoords, model: *const DeviceModel) !wire_codes.SwitchSinkSrc {
@@ -490,65 +467,9 @@ pub fn parseSwitchSrc(p: *CommonParser, sw: common.SwitchCoords, model: *const D
                 .any = true,
             } };
         } else if (std.mem.eql(u8, output_word, "DO")) {
-            // BRAM
-            try p.expect('[');
-            const index = try p.parseNumber(u4);
-            try p.expect(']');
-            if (tile_type != .bram)
-                try p.err(
-                    "Trying to access output DO[{}], but tile ({},{}).{s} is {s}, not bram",
-                    .{ index, sw.row, sw.col, word, @tagName(tile_type) },
-                );
-            const tile_idx = (sw.tile(corner).row - 1) % 4;
-            if (index / 4 != tile_idx)
-                try p.err(
-                    "Trying to access output DO[{}] at tile ({},{}).{s}, " ++
-                        "but it is cell #{} in Block RAM, which only has outputs DO[{}...{}]",
-                    .{
-                        index,
-                        sw.row,
-                        sw.col,
-                        word,
-                        tile_idx,
-                        tile_idx * 4,
-                        tile_idx * 4 + 3,
-                    },
-                );
-
-            return .{ .out = .{
-                .corner = corner,
-                .index = @intCast(index % 4),
-            } };
+            return try p.parseBigTileOutput(sw, corner, word, tile_type, .bram, "DO", "Block RAM");
         } else if (std.mem.eql(u8, output_word, "O")) {
-            // DSP
-            try p.expect('[');
-            const index = try p.parseNumber(u4);
-            try p.expect(']');
-            if (tile_type != .dsp)
-                try p.err(
-                    "Trying to access output O[{}], but tile ({},{}).{s} is {s}, not dsp",
-                    .{ index, sw.row, sw.col, word, @tagName(tile_type) },
-                );
-            const tile_idx = (sw.tile(corner).row - 1) % 4;
-            if (index / 4 != tile_idx)
-                try p.err(
-                    "Trying to access output O[{}] at tile ({},{}).{s}, " ++
-                        "but it is cell #{} in DSP, which only has outputs O[{}...{}]",
-                    .{
-                        index,
-                        sw.row,
-                        sw.col,
-                        word,
-                        tile_idx,
-                        tile_idx * 4,
-                        tile_idx * 4 + 3,
-                    },
-                );
-
-            return .{ .out = .{
-                .corner = corner,
-                .index = @intCast(index % 4),
-            } };
+            return try p.parseBigTileOutput(sw, corner, word, tile_type, .dsp, "O", "DSP");
         } else if (std.mem.eql(u8, output_word, "ZERO")) {
             if (tile_type != .inert)
                 try p.err(

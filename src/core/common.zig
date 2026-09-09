@@ -101,6 +101,12 @@ pub const Side = enum(u2) {
         };
     }
 
+    /// The two directions a wire on this side may run, in the order error
+    /// messages list them.
+    pub fn legalDirs(s: Side) [2]Direction {
+        return .{ s.turnDir(.cw), s.turnDir(.ccw) };
+    }
+
     pub fn turnDir(s: Side, to: TurnOrientation) Direction {
         return switch (to) {
             .cw => switch (s) {
@@ -817,6 +823,13 @@ pub const BigEdge = enum {
             .h0, .h1, .h2, .h3, .h4 => .horizontal,
             .w0, .w1, .w2, .w3, .e0, .e1, .e2, .e3 => .vertical,
         };
+    }
+
+    /// The two directions a wire on this edge may run, in the order error
+    /// messages list them.
+    pub fn legalDirs(be: BigEdge) [2]Direction {
+        const o = be.orientation();
+        return .{ o.dirDesc(), o.dirAsc() };
     }
 
     pub fn format(
