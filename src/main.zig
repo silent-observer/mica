@@ -15,6 +15,9 @@ pub fn main(init: std.process.Init) !void {
     const r = core.TextParser.parse(text, init.gpa);
     defer r.deinit(init.gpa);
 
+    const r2 = core.NetlistParser.parse(text, init.gpa);
+    defer r2.deinit(init.gpa);
+
     if (r.err) |e| {
         std.debug.print("{s}\n", .{e});
         return;

@@ -12,6 +12,8 @@ pub const BinaryParser = @import("bitstream/BinaryParser.zig");
 pub const BinaryEmitter = @import("bitstream/BinaryEmitter.zig");
 
 pub const Configuration = @import("Configuration.zig");
+pub const Netlist = @import("netlist/Netlist.zig");
+pub const NetlistParser = @import("netlist/NetlistParser.zig");
 
 test "core tests" {
     std.testing.refAllDecls(@This());
