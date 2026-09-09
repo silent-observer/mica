@@ -31,28 +31,47 @@ const passes: std.StaticStringMap(Netlist.Pass) = .initComptime(.{
     .{ "route", .route },
 });
 
+const NetParam = struct {
+    word: []const u8,
+    kinds: []const Netlist.NetKind,
+    phrase: []const u8,
+    field: []const u8,
+    T: type,
+};
+
+const net_params = [_]NetParam{
+    .{
+        .word = "PERIOD",
+        .kinds = &.{.clock},
+        .phrase = "clock nets",
+        .field = "period_ps",
+        .T = u32,
+    },
+    .{
+        .word = "CLK",
+        .kinds = &.{.clock},
+        .phrase = "clock nets",
+        .field = "network",
+        .T = u3,
+    },
+    .{
+        .word = "RST",
+        .kinds = &.{.reset},
+        .phrase = "reset nets",
+        .field = "network",
+        .T = u2,
+    },
+    .{
+        .word = "PIN",
+        .kinds = &.{ .clock, .reset },
+        .phrase = "clock or reset nets",
+        .field = "pin",
+        .T = u16,
+    },
+};
+
 fn parseHeader(p: *NetlistParser) !void {
-    const format_word = try p.p.parseWord();
-    if (!std.mem.eql(u8, format_word, "format"))
-        try p.p.err("Expected 'format', but got '{s}'", .{format_word});
-
-    const format_int = try p.p.parseNumber(u64);
-    if (format_int != 1)
-        try p.p.err("Expected 'format 1', but got 'format {}'", .{format_int});
-
-    try p.p.expect(';');
-
-    const device_word = try p.p.parseWord();
-    if (!std.mem.eql(u8, device_word, "device"))
-        try p.p.err("Expected 'device', but got '{s}'", .{device_word});
-
-    const device_str = try p.p.parseDeviceName();
-    try p.p.expect(';');
-
-    const model: DeviceModel = for (&DeviceModel.models) |m| {
-        if (std.mem.eql(u8, device_str, m.model_id))
-            break m;
-    } else try p.p.err("Unknown device model: '{s}'", .{device_str});
+    const model = try p.p.parseFormatAndDevice();
 
     const design_word = try p.p.parseWord();
     if (!std.mem.eql(u8, design_word, "design"))
@@ -224,47 +243,7 @@ fn parseNet(p: *NetlistParser) !void {
     try p.p.expect('{');
     while (!p.p.checkEof() and !p.p.check('}')) {
         const word = try p.p.parseWord();
-        if (std.mem.eql(u8, word, "PERIOD")) { // Clock period
-            if (old_kind != .clock)
-                try p.p.err(
-                    "PERIOD can only be set for clock nets, '{f}' is '{s}'",
-                    .{ name, @tagName(kind) },
-                );
-            const clock_net = p.nl().getGlobalNet(net_ref);
-            try p.p.expect('=');
-            clock_net.period_ps = try p.p.parseNumber(u32);
-            try p.p.expect(';');
-        } else if (std.mem.eql(u8, word, "CLK")) { // Clock id
-            if (old_kind != .clock)
-                try p.p.err(
-                    "CLK can only be set for clock nets, '{f}' is '{s}'",
-                    .{ name, @tagName(kind) },
-                );
-            const clock_net = p.nl().getGlobalNet(net_ref);
-            try p.p.expect('=');
-            clock_net.network = try p.p.parseNumber(u3);
-            try p.p.expect(';');
-        } else if (std.mem.eql(u8, word, "RST")) { // Reset id
-            if (old_kind != .reset)
-                try p.p.err(
-                    "RST can only be set for reset nets, '{f}' is '{s}'",
-                    .{ name, @tagName(kind) },
-                );
-            const clock_net = p.nl().getGlobalNet(net_ref);
-            try p.p.expect('=');
-            clock_net.network = try p.p.parseNumber(u2);
-            try p.p.expect(';');
-        } else if (std.mem.eql(u8, word, "PIN")) { // Reset/clock pin
-            if (old_kind != .clock and old_kind != .reset)
-                try p.p.err(
-                    "PIN can only be set for clock or reset nets, '{f}' is '{s}'",
-                    .{ name, @tagName(kind) },
-                );
-            const global_net = p.nl().getGlobalNet(net_ref);
-            try p.p.expect('=');
-            global_net.pin = try p.p.parseNumber(u16);
-            try p.p.expect(';');
-        } else if (std.mem.eql(u8, word, "route")) { // Net route
+        if (std.mem.eql(u8, word, "route")) { // Net route
             if (old_kind != .net)
                 try p.p.err(
                     "'route' block can only be set for normal nets, '{f}' is '{s}'",
@@ -272,7 +251,26 @@ fn parseNet(p: *NetlistParser) !void {
                 );
             const net = p.nl().getNet(net_ref);
             try p.parseNetRoute(net);
-        } else try p.p.err("Unknown net command: '{s}'", .{word});
+        } else blk: {
+            inline for (net_params) |param| {
+                if (std.mem.eql(u8, word, param.word)) {
+                    if (std.mem.indexOfScalar(Netlist.NetKind, param.kinds, old_kind) == null)
+                        try p.p.err(
+                            param.word ++ " can only be set for " ++ param.phrase ++
+                                ", '{f}' is '{s}'",
+                            .{ name, @tagName(kind) },
+                        );
+
+                    const global_net = p.nl().getGlobalNet(net_ref);
+                    try p.p.expect('=');
+                    @field(global_net, param.field) = try p.p.parseNumber(param.T);
+                    try p.p.expect(';');
+                    break :blk;
+                }
+            }
+
+            try p.p.err("Unknown net command: '{s}'", .{word});
+        }
     }
     try p.p.expect('}');
 }

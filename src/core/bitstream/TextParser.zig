@@ -20,29 +20,7 @@ fn init(input: []const u8, alloc: std.mem.Allocator) TextParser {
 }
 
 fn parseHeader(p: *TextParser) !void {
-    const format_word = try p.p.parseWord();
-    if (!std.mem.eql(u8, format_word, "format"))
-        try p.p.err("Expected 'format', but got '{s}'", .{format_word});
-
-    const format_int = try p.p.parseNumber(u64);
-    if (format_int != 1)
-        try p.p.err("Expected 'format 1', but got 'format {}'", .{format_int});
-
-    try p.p.expect(';');
-
-    const device_word = try p.p.parseWord();
-    if (!std.mem.eql(u8, device_word, "device"))
-        try p.p.err("Expected 'device', but got '{s}'", .{device_word});
-
-    const device_str = try p.p.parseDeviceName();
-    try p.p.expect(';');
-
-    const model: DeviceModel = for (&DeviceModel.models) |m| {
-        if (std.mem.eql(u8, device_str, m.model_id))
-            break m;
-    } else try p.p.err("Unknown device model: '{s}'", .{device_str});
-
-    p.config = .init(model, p.p.alloc);
+    p.config = .init(try p.p.parseFormatAndDevice(), p.p.alloc);
 }
 
 fn parseBlock(p: *TextParser) !void {

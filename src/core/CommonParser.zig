@@ -175,6 +175,33 @@ pub fn parseString(p: *CommonParser) ![]const u8 {
     return p.input[start + 1 .. end - 1];
 }
 
+/// Both formats open with the same two lines, `format 1;` and `device "M1/S";`
+/// -- the netlist then continues with `design` and `pass`, the bitstream goes
+/// straight to its blocks.
+pub fn parseFormatAndDevice(p: *CommonParser) !DeviceModel {
+    const format_word = try p.parseWord();
+    if (!std.mem.eql(u8, format_word, "format"))
+        try p.err("Expected 'format', but got '{s}'", .{format_word});
+
+    const format_int = try p.parseNumber(u64);
+    if (format_int != 1)
+        try p.err("Expected 'format 1', but got 'format {}'", .{format_int});
+
+    try p.expect(';');
+
+    const device_word = try p.parseWord();
+    if (!std.mem.eql(u8, device_word, "device"))
+        try p.err("Expected 'device', but got '{s}'", .{device_word});
+
+    const device_str = try p.parseDeviceName();
+    try p.expect(';');
+
+    return for (&DeviceModel.models) |m| {
+        if (std.mem.eql(u8, device_str, m.model_id))
+            break m;
+    } else try p.err("Unknown device model: '{s}'", .{device_str});
+}
+
 pub fn parseDeviceName(p: *CommonParser) ![]const u8 {
     const str = try p.parseString();
     if (str.len != 4)
