@@ -16,6 +16,29 @@ pub const TileType = enum {
             else => null,
         };
     }
+
+    pub fn big(t: TileType) bool {
+        return switch (t) {
+            .inert, .logic, .io => false,
+            .bram, .dsp => true,
+        };
+    }
+
+    pub fn carriesConfig(t: TileType, tile: TileCoords) bool {
+        return !t.big() or (tile.row - 1) % 4 == 0;
+    }
+
+    pub fn Input(t: TileType) type {
+        return switch (t) {
+            .inert => void,
+            .logic => LogicInput,
+            .bram => BramInput,
+            .dsp => DspInput,
+            .io => IoInput,
+        };
+    }
+
+    pub const configurable = [_]TileType{ .logic, .bram, .dsp, .io };
 };
 
 pub const Orientation = enum(u1) {
@@ -550,6 +573,12 @@ pub const IoInput = enum(u8) {
         return @intFromEnum(in);
     }
 
+    pub fn fromIdx(i: u8) IoInput {
+        return @enumFromInt(i);
+    }
+
+    // Need to know the wired edge side to fully place the inputs
+    pub const Cxt = Side;
     pub const WIDTHS: std.EnumArray(IoInput, usize) = .init(.{
         .o = 1,
         .e = 1,
@@ -589,6 +618,11 @@ pub const LogicInput = enum(u8) {
         return @intFromEnum(in);
     }
 
+    pub fn fromIdx(i: u8) LogicInput {
+        return @enumFromInt(i);
+    }
+
+    pub const Cxt = void;
     pub const WIDTHS: std.EnumArray(LogicInput, usize) = .init(.{
         .a1 = 1,
         .b1 = 1,
@@ -660,6 +694,7 @@ pub const BramInput = union(enum) {
         return .{ .di = x };
     }
 
+    pub const Cxt = void;
     pub const WIDTHS: std.EnumArray(std.meta.Tag(BramInput), usize) = .init(.{
         .a1 = 12,
         .a2 = 12,
@@ -724,6 +759,7 @@ pub const DspInput = union(enum) {
         return .{ .c = x };
     }
 
+    pub const Cxt = void;
     pub const WIDTHS: std.EnumArray(std.meta.Tag(DspInput), usize) = .init(.{
         .a = 8,
         .b = 8,

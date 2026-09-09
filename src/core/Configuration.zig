@@ -179,9 +179,36 @@ pub fn deinit(c: Configuration, alloc: std.mem.Allocator) void {
     alloc.free(c.io);
 }
 
+pub fn For(comptime t: common.TileType) type {
+    return switch (t) {
+        .inert => void,
+        .logic => Logic,
+        .bram => Bram,
+        .dsp => Dsp,
+        .io => Io,
+    };
+}
+
 pub fn getSwitch(c: *const Configuration, sw: common.SwitchCoords) *Switch {
     const idx = sw.row + sw.col * c.model.grid.vertexRows();
     return &c.switches[idx];
+}
+
+pub fn getBramData(c: *const Configuration, tile: common.TileCoords) *Bram.Data {
+    const row = (tile.row - 1) / 4;
+    const col = c.model.column_indexes[tile.col];
+    const idx = row + col * c.model.grid.tileRows() / 4;
+    return &c.bram_data[idx];
+}
+
+pub fn get(c: *const Configuration, comptime t: common.TileType, tile: common.TileCoords) *For(t) {
+    return switch (t) {
+        .inert => {},
+        .logic => c.getLogic(tile),
+        .bram => c.getBram(tile),
+        .dsp => c.getDsp(tile),
+        .io => c.getIo(tile),
+    };
 }
 
 pub fn getLogic(c: *const Configuration, tile: common.TileCoords) *Logic {
@@ -196,13 +223,6 @@ pub fn getBram(c: *const Configuration, tile: common.TileCoords) *Bram {
     const col = c.model.column_indexes[tile.col];
     const idx = row + col * c.model.grid.tileRows() / 4;
     return &c.bram[idx];
-}
-
-pub fn getBramData(c: *const Configuration, tile: common.TileCoords) *Bram.Data {
-    const row = (tile.row - 1) / 4;
-    const col = c.model.column_indexes[tile.col];
-    const idx = row + col * c.model.grid.tileRows() / 4;
-    return &c.bram_data[idx];
 }
 
 pub fn getDsp(c: *const Configuration, tile: common.TileCoords) *Dsp {

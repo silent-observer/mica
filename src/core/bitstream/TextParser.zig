@@ -4,8 +4,8 @@ const common = @import("../common.zig");
 const wire_codes = @import("../wire_codes.zig");
 const Configuration = @import("../Configuration.zig");
 const DeviceModel = @import("../DeviceModel.zig");
-const text_tables = @import("text_tables.zig");
 const CommonParser = @import("../CommonParser.zig");
+const blocks = @import("blocks.zig");
 
 const TextParser = @This();
 
@@ -51,16 +51,17 @@ fn parseBlock(p: *TextParser) !void {
         try p.parseGlobalBlock()
     else if (std.mem.eql(u8, block, "switch"))
         try p.parseSwitchBlock()
-    else if (std.mem.eql(u8, block, "logic"))
-        try p.parseLogicBlock()
-    else if (std.mem.eql(u8, block, "bram"))
-        try p.parseBramBlock()
-    else if (std.mem.eql(u8, block, "dsp"))
-        try p.parseDspBlock()
-    else if (std.mem.eql(u8, block, "io"))
-        try p.parseIoBlock()
-    else
+    else blk: {
+        inline for (blocks.tile_blocks) |meta| {
+            if (std.mem.eql(u8, block, @tagName(meta.tile.?))) {
+                try p.parseTileBlock(meta);
+                break :blk;
+            }
+        }
+
+        // If we didn't find anything, it's an error
         try p.p.err("Unknown block '{s}'", .{block});
+    }
 }
 
 const cin_sources: std.StaticStringMap(Configuration.Logic.CinSource) = .initComptime(.{
@@ -114,14 +115,14 @@ const resets: std.StaticStringMap(u2) = .initComptime(.{
     .{ "RST3", 3 },
 });
 
-fn storeInput(t: anytype, in: anytype, code: u5) void {
+fn storeInput(cfg: anytype, in: anytype, code: u5) void {
     switch (@typeInfo(@TypeOf(in))) {
         // LogicInput / IoInput: flat EnumArray on the tile struct
-        .@"enum" => t.inputs.set(in, code),
+        .@"enum" => cfg.inputs.set(in, code),
         // BramInput / DspInput: one field per tag, array index in the payload
         .@"union" => switch (in) {
             inline else => |idx, tag| {
-                const f = &@field(t, @tagName(tag));
+                const f = &@field(cfg, @tagName(tag));
                 if (@TypeOf(idx) == void)
                     f.* = @intCast(code)
                 else
@@ -134,39 +135,27 @@ fn storeInput(t: anytype, in: anytype, code: u5) void {
 
 fn parseCommands(
     p: *TextParser,
-    comptime table: []const text_tables.Field,
-    comptime T: type,
-    comptime Input: type,
+    comptime meta: blocks.Metadata,
     tile: common.TileCoords,
-    t: *T,
+    cfg: *meta.Config,
 ) !void {
     try p.p.expect('{');
 
     var bram_width: ?u16 = null;
-    while (!p.p.check('}')) {
-        var found = false;
+    outer: while (!p.p.check('}')) {
         const word = try p.p.parseWord();
         if (std.mem.eql(u8, word, "in")) {
-            found = true;
-
-            const in: Input, const code: u5 =
-                if (Input == common.LogicInput)
-                    try p.p.parseLogicInputCommand()
-                else if (Input == common.BramInput)
-                    try p.p.parseBramInputCommand()
-                else if (Input == common.DspInput)
-                    try p.p.parseDspInputCommand()
-                else if (Input == common.IoInput)
-                    try p.p.parseIoInputCommand(p.config.?.model.ioWireSide(tile))
-                else if (Input == void)
-                    try p.p.err("No inputs allowed here!", .{})
-                else
-                    @compileError("Incorrect Input type " ++ @typeName(Input));
-            storeInput(t, in, code);
+            if (meta.tile) |t| {
+                const cxt = p.config.?.model.inputCxt(t, tile);
+                const in: t.Input(), const code: u5 = try p.p.parseInputCommand(t, cxt);
+                storeInput(cfg, in, code);
+                continue :outer;
+            } else {
+                try p.p.err("Block '{s}' can't have inputs!", .{word});
+            }
         } else {
-            inline for (table) |f| {
+            inline for (meta.table) |f| {
                 if (std.mem.eql(u8, word, f.word)) {
-                    found = true;
                     const index: ?u4 = if (f.width != 1) blk: { // Array
                         try p.p.expect('[');
                         const index = try p.p.parseNumber(u4);
@@ -194,10 +183,10 @@ fn parseCommands(
 
                             if (f.width != 1) {
                                 // Array
-                                @field(t.*, f.field)[index.?] = x;
+                                @field(cfg.*, f.field)[index.?] = x;
                             } else {
                                 // Plain
-                                @field(t.*, f.field) = x;
+                                @field(cfg.*, f.field) = x;
                             }
                             try p.p.expect(';');
                         },
@@ -209,7 +198,7 @@ fn parseCommands(
 
                                 const x = try p.p.parseNumber(u3);
                                 bram_width = 16;
-                                @field(t.*, f.field) = x;
+                                @field(cfg.*, f.field) = x;
                             } else {
                                 const x = try p.p.parseNumber(u16);
                                 const width_val: u3 = switch (x) {
@@ -221,7 +210,7 @@ fn parseCommands(
                                     else => try p.p.err("BRAM width can only be 1, 2, 4, 8 or 16, not {}", .{x}),
                                 };
                                 bram_width = x;
-                                @field(t.*, f.field) = width_val;
+                                @field(cfg.*, f.field) = width_val;
                             }
                             try p.p.expect(';');
                         },
@@ -239,13 +228,13 @@ fn parseCommands(
                                     );
                             };
 
-                            @field(t.*, f.field) = cin_src;
+                            @field(cfg.*, f.field) = cin_src;
                             try p.p.expect(';');
                         },
                         .clk => {
                             const clk_word = try p.p.parseWord();
                             if (clocks.get(clk_word)) |code|
-                                @field(t.*, f.field) = code
+                                @field(cfg.*, f.field) = code
                             else
                                 try p.p.err(
                                     "Expected a clock like CLK3, but got {s}",
@@ -256,7 +245,7 @@ fn parseCommands(
                         .rst => {
                             const rst_word = try p.p.parseWord();
                             if (resets.get(rst_word)) |code|
-                                @field(t.*, f.field) = code
+                                @field(cfg.*, f.field) = code
                             else
                                 try p.p.err(
                                     "Expected a clock like RST3, but got {s}",
@@ -273,11 +262,9 @@ fn parseCommands(
                                 );
 
                             try p.parseCommands(
-                                &text_tables.reg_table,
-                                Configuration.Logic.Reg,
-                                void,
+                                blocks.reg,
                                 tile,
-                                &t.*.regs[num - 1],
+                                &cfg.*.regs[num - 1],
                             );
                         },
                         .data => {
@@ -312,20 +299,15 @@ fn parseCommands(
                             try p.p.expect('}');
                         },
                     }
+
+                    continue :outer;
                 }
             }
-            if (!found) {
-                if (T == Configuration.Global)
-                    try p.p.err("No such parameter '{s}' for global block", .{word})
-                else
-                    try p.p.err(
-                        "No such parameter '{s}' for {s} tile",
-                        .{
-                            word,
-                            @tagName(p.config.?.model.tileType(tile)),
-                        },
-                    );
-            }
+
+            try p.p.err("No such parameter '{s}' for '{s}' block", .{
+                word,
+                meta.name(),
+            });
         }
     }
     try p.p.expect('}');
@@ -334,79 +316,25 @@ fn parseCommands(
 fn parseGlobalBlock(p: *TextParser) !void {
     // 'global' already parsed
     try p.parseCommands(
-        &text_tables.global_table,
-        Configuration.Global,
-        void,
+        blocks.global,
         undefined,
         &p.config.?.global,
     );
 }
 
-fn parseLogicBlock(p: *TextParser) !void {
-    // 'logic' already parsed
+fn parseTileBlock(p: *TextParser, comptime meta: blocks.Metadata) !void {
+    // Block tag already parsed
+    const t = meta.tile.?;
     const tile = try p.p.parseTileCoords(&p.config.?.model);
-    if (p.config.?.model.tileType(tile) != .logic)
+    if (p.config.?.model.tileType(tile) != t)
         try p.p.err(
-            "Tile ({}, {}) is {s}, not logic",
-            .{ tile.row, tile.col, @tagName(p.config.?.model.tileType(tile)) },
+            "Tile ({}, {}) is {s}, not {s}",
+            .{ tile.row, tile.col, @tagName(p.config.?.model.tileType(tile)), @tagName(t) },
         );
     try p.parseCommands(
-        &text_tables.logic_table,
-        Configuration.Logic,
-        common.LogicInput,
+        meta,
         tile,
-        p.config.?.getLogic(tile),
-    );
-}
-
-fn parseBramBlock(p: *TextParser) !void {
-    // 'bram' already parsed
-    const tile = try p.p.parseTileCoords(&p.config.?.model);
-    if (p.config.?.model.tileType(tile) != .bram)
-        try p.p.err(
-            "Tile ({}, {}) is {s}, not bram",
-            .{ tile.row, tile.col, @tagName(p.config.?.model.tileType(tile)) },
-        );
-    try p.parseCommands(
-        &text_tables.bram_table,
-        Configuration.Bram,
-        common.BramInput,
-        tile,
-        p.config.?.getBram(tile),
-    );
-}
-
-fn parseDspBlock(p: *TextParser) !void {
-    // 'dsp' already parsed
-    const tile = try p.p.parseTileCoords(&p.config.?.model);
-    if (p.config.?.model.tileType(tile) != .dsp)
-        try p.p.err(
-            "Tile ({}, {}) is {s}, not dsp",
-            .{ tile.row, tile.col, @tagName(p.config.?.model.tileType(tile)) },
-        );
-    try p.parseCommands(
-        &text_tables.dsp_table,
-        Configuration.Dsp,
-        common.DspInput,
-        tile,
-        p.config.?.getDsp(tile),
-    );
-}
-
-fn parseIoBlock(p: *TextParser) !void {
-    // 'io' already parsed
-    const tile = try p.p.parseTileCoords(&p.config.?.model);
-    if (p.config.?.model.tileType(tile) != .io)
-        try p.p.err(
-            "Tile ({}, {}) is {s}, not io",
-            .{ tile.row, tile.col, @tagName(p.config.?.model.tileType(tile)) },
-        );
-    try p.parseCommands(
-        &text_tables.io_table,
-        Configuration.Io,
-        common.IoInput,
-        tile,
-        p.config.?.getIo(tile),
+        p.config.?.get(t, tile),
     );
 }
 

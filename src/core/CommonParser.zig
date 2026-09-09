@@ -580,95 +580,62 @@ pub fn parseInputConstant(p: *CommonParser) !?u1 {
         null;
 }
 
-pub fn parseLogicInputSrc(p: *CommonParser, in: common.LogicInput) !u5 {
+pub fn parseInputSrc(
+    p: *CommonParser,
+    comptime t: common.TileType,
+    in: t.Input(),
+    cxt: t.Input().Cxt,
+) !u5 {
     if (try p.parseInputConstant()) |c|
-        return wire_codes.encodeLogicInput(in, if (c == 0) .zero else .one).?;
-
-    const m = p.mark();
-    if (std.mem.eql(u8, try p.parseWord(), "code"))
-        return try p.parseNumber(u5)
-    else
-        p.reset(m);
-
-    if (logic_outputs.get(try p.parseWord())) |lo|
-        return wire_codes.encodeLogicInput(in, .{ .local = lo }).?
-    else
-        p.reset(m);
-
-    const wire = try p.parseDirectionalWire1x1() orelse
-        try p.err("Expected a logic tile input like N[R].L1[3]", .{});
-    return wire_codes.encodeLogicInput(in, .{ .wire = wire }) orelse
-        try p.err("For input {f}, wire {f} is not accessible", .{ in, wire });
-}
-
-pub fn parseBramInputSrc(p: *CommonParser, in: common.BramInput) !u5 {
-    if (try p.parseInputConstant()) |c|
-        return wire_codes.encodeBramInput(in, if (c == 0) .zero else .one).?;
+        return wire_codes.encodeInput(t, in, cxt, if (c == 0) .zero else .one).?;
 
     const m = p.mark();
     if (std.mem.eql(u8, try p.parseWord(), "code")) {
-        return switch (in) {
-            .a1, .a2, .di => try p.parseNumber(u4),
-            .we1, .we2 => try p.parseNumber(u5),
-        };
+        if (t == .bram)
+            return switch (in) {
+                .a1, .a2, .di => try p.parseNumber(u4),
+                .we1, .we2 => try p.parseNumber(u5),
+            }
+        else
+            return try p.parseNumber(u5);
     } else p.reset(m);
 
-    const wire = try p.parseDirectionalWire4x1() orelse
-        try p.err("Expected a BRAM tile input like H1[R].L1[3]", .{});
-    return wire_codes.encodeBramInput(in, .{ .wire = wire }) orelse
-        try p.err("For input {f}, wire {f} is not accessible", .{ in, wire });
-}
+    if (t == .logic) {
+        if (logic_outputs.get(try p.parseWord())) |lo|
+            return wire_codes.encodeInput(t, in, cxt, .{ .local = lo }).?
+        else
+            p.reset(m);
+    }
 
-pub fn parseDspInputSrc(p: *CommonParser, in: common.DspInput) !u5 {
-    if (try p.parseInputConstant()) |c|
-        return wire_codes.encodeDspInput(in, if (c == 0) .zero else .one).?;
+    const wire = switch (comptime t.big()) {
+        false => try p.parseDirectionalWire1x1() orelse
+            try p.err("Expected a logic tile input like N[R].L1[3]", .{}),
+        true => try p.parseDirectionalWire4x1() orelse
+            try p.err("Expected a BRAM tile input like H1[R].L1[3]", .{}),
+    };
 
-    const m = p.mark();
-    if (std.mem.eql(u8, try p.parseWord(), "code"))
-        return try p.parseNumber(u5)
-    else
-        p.reset(m);
-
-    const wire = try p.parseDirectionalWire4x1() orelse
-        try p.err("Expected a DSP tile input like H1[R].L1[3]", .{});
-    return wire_codes.encodeDspInput(in, .{ .wire = wire }) orelse
-        try p.err("For input {f}, wire {f} is not accessible", .{ in, wire });
-}
-
-pub fn parseIoInputSrc(p: *CommonParser, side: common.Side, in: common.IoInput) !u5 {
-    if (try p.parseInputConstant()) |c|
-        return wire_codes.encodeIoInput(in, side, if (c == 0) .zero else .one).?;
-
-    const m = p.mark();
-    if (std.mem.eql(u8, try p.parseWord(), "code"))
-        return try p.parseNumber(u5)
-    else
-        p.reset(m);
-
-    const wire = try p.parseDirectionalWire1x1() orelse
-        try p.err("Expected an IO tile input like N[R].L1[3]", .{});
-    return wire_codes.encodeIoInput(in, side, .{ .wire = wire }) orelse
+    return wire_codes.encodeInput(t, in, cxt, .{ .wire = wire }) orelse
         try p.err("For input {f}, wire {f} is not accessible", .{ in, wire });
 }
 
 pub fn parseInputCommand(
     p: *CommonParser,
-    comptime Input: type,
-    io_side: common.Side,
-) !struct { Input, u5 } {
+    comptime t: common.TileType,
+    cxt: t.Input().Cxt,
+) !struct { t.Input(), u5 } {
     // 'in' already parsed
     const input_word = try p.parseWord();
-    inline for (std.meta.fields(Input)) |f| {
+    inline for (std.meta.fields(t.Input())) |f| {
         const expected_input_word: [f.name.len]u8 = comptime blk: {
             var buf: [f.name.len]u8 = undefined;
             _ = std.ascii.upperString(&buf, f.name);
             break :blk buf;
         };
 
-        const input_width: usize = Input.WIDTHS.get(@field(Input, f.name));
+        const input_width: usize = t.Input().WIDTHS.get(@field(t.Input(), f.name));
         const input_variant: []const u8 = f.name;
         if (std.mem.eql(u8, input_word, &expected_input_word)) {
-            const index: ?u4 = if (@typeInfo(Input) == .@"union" and f.type != void) blk: { // Array
+            const index: ?u4 = if (@typeInfo(t.Input()) == .@"union" and f.type != void) blk: { // Array
                 try p.expect('[');
                 const index = try p.parseNumber(u4);
                 try p.expect(']');
@@ -682,73 +649,21 @@ pub fn parseInputCommand(
 
             try p.expect('=');
 
-            const in = if (@typeInfo(Input) == .@"enum")
-                @field(Input, input_variant)
+            const in = if (@typeInfo(t.Input()) == .@"enum")
+                @field(t.Input(), input_variant)
             else if (f.type == void)
-                @unionInit(Input, input_variant, {})
+                @unionInit(t.Input(), input_variant, {})
             else
-                @unionInit(Input, input_variant, @intCast(index.?));
+                @unionInit(t.Input(), input_variant, @intCast(index.?));
 
-            const code: u5 = if (Input == common.LogicInput)
-                try p.parseLogicInputSrc(in)
-            else if (Input == common.BramInput)
-                try p.parseBramInputSrc(in)
-            else if (Input == common.DspInput)
-                try p.parseDspInputSrc(in)
-            else if (Input == common.IoInput)
-                try p.parseIoInputSrc(io_side, in)
-            else
-                @compileError("Incorrect Input type " ++ @typeName(Input));
-
+            const code: u5 = try p.parseInputSrc(t, in, cxt);
             try p.expect(';');
             return .{ in, code };
         }
     }
 
-    const tile_name = if (Input == common.LogicInput)
-        "logic"
-    else if (Input == common.BramInput)
-        "BRAM"
-    else if (Input == common.DspInput)
-        "DSP"
-    else if (Input == common.IoInput)
-        "IO"
-    else
-        @compileError("Incorrect Input type " ++ @typeName(Input));
-
     try p.err(
         "No such input '{s}' for {s} tile",
-        .{
-            input_word,
-            tile_name,
-        },
-    );
-}
-
-pub fn parseLogicInputCommand(p: *CommonParser) !struct { common.LogicInput, u5 } {
-    return try p.parseInputCommand(
-        common.LogicInput,
-        undefined,
-    );
-}
-
-pub fn parseBramInputCommand(p: *CommonParser) !struct { common.BramInput, u5 } {
-    return try p.parseInputCommand(
-        common.BramInput,
-        undefined,
-    );
-}
-
-pub fn parseDspInputCommand(p: *CommonParser) !struct { common.DspInput, u5 } {
-    return try p.parseInputCommand(
-        common.DspInput,
-        undefined,
-    );
-}
-
-pub fn parseIoInputCommand(p: *CommonParser, side: common.Side) !struct { common.IoInput, u5 } {
-    return try p.parseInputCommand(
-        common.IoInput,
-        side,
+        .{ input_word, @tagName(t) },
     );
 }

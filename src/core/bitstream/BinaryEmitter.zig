@@ -4,7 +4,6 @@ const common = @import("../common.zig");
 const wire_codes = @import("../wire_codes.zig");
 const Configuration = @import("../Configuration.zig");
 const DeviceModel = @import("../DeviceModel.zig");
-const text_tables = @import("text_tables.zig");
 const BitWriter = @import("BitWriter.zig");
 
 const BinaryEmitter = @This();

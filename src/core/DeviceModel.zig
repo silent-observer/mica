@@ -139,7 +139,19 @@ pub fn tileType(m: *const DeviceModel, tile: common.TileCoords) common.TileType 
     };
 }
 
-pub fn ioWireSide(m: *const DeviceModel, tile: common.TileCoords) common.Side {
+pub fn inputCxt(
+    m: *const DeviceModel,
+    comptime t: common.TileType,
+    tile: common.TileCoords,
+) t.Input().Cxt {
+    return switch (t.Input().Cxt) {
+        void => {},
+        common.Side => m.ioWireSide(tile),
+        else => @compileError("Unknown Input context: " ++ @typeName(t.Input().Cxt)),
+    };
+}
+
+fn ioWireSide(m: *const DeviceModel, tile: common.TileCoords) common.Side {
     return if (tile.row == m.grid.northIo())
         .s
     else if (tile.row == m.grid.southIo())

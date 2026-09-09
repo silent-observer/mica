@@ -5,7 +5,7 @@ const wire_codes = @import("../wire_codes.zig");
 const routing = @import("../routing.zig");
 const Configuration = @import("../Configuration.zig");
 const DeviceModel = @import("../DeviceModel.zig");
-const text_tables = @import("text_tables.zig");
+const blocks = @import("blocks.zig");
 
 const TextEmitter = @This();
 
@@ -131,72 +131,25 @@ fn collectSwitchSinkRead(
     });
 }
 
-fn collectLogicReads(e: *TextEmitter, tile: common.TileCoords) void {
-    const config = e.config.getLogic(tile);
-    for (std.enums.values(common.LogicInput)) |in| {
-        const code = config.inputs.get(in);
-        if (code == 0) continue;
-        const wire = switch (wire_codes.decodeLogicInput(in, code)) {
-            .wire => |w| w,
-            else => continue,
-        };
-        const channel = tile.channel(wire.side, e.config.model.grid) orelse continue;
-        e.markChannelRead(channel, wire);
-    }
-}
+fn collectTileReads(e: *TextEmitter, comptime t: common.TileType, tile: common.TileCoords) void {
+    if (!t.carriesConfig(tile)) return;
 
-fn collectBramReads(e: *TextEmitter, tile: common.TileCoords) void {
-    const config = e.config.getBram(tile);
-    for (0..common.BramInput.TOTAL) |idx| {
-        const in = common.BramInput.fromIdx(@intCast(idx));
-        const code: u5 = switch (in) {
-            .a1 => |i| config.a1[i],
-            .a2 => |i| config.a2[i],
-            .di => |i| config.di[i],
-            .we1 => config.we1,
-            .we2 => config.we2,
-        };
-        if (code == 0) continue;
-        const wire = switch (wire_codes.decodeBramInput(in, code)) {
-            .wire => |w| w,
-            else => continue,
-        };
-        e.markChannelRead(tile.bigChannel(wire.side, e.config.model.grid), wire);
-    }
-}
+    const config = e.config.get(t, tile);
+    const cxt = e.config.model.inputCxt(t, tile);
 
-fn collectDspReads(e: *TextEmitter, tile: common.TileCoords) void {
-    const config = e.config.getDsp(tile);
-    for (0..common.DspInput.TOTAL) |idx| {
-        const in = common.DspInput.fromIdx(@intCast(idx));
-        const code: u5 = switch (in) {
-            .a => |i| config.a[i],
-            .b => |i| config.b[i],
-            .c => |i| config.c[i],
-            .md => config.md,
-            .ad => config.ad,
-            .we => config.we,
-        };
+    for (0..t.Input().TOTAL) |idx| {
+        const in = t.Input().fromIdx(@intCast(idx));
+        const code: u5 = @intCast(getInput(config, in));
         if (code == 0) continue;
-        const wire = switch (wire_codes.decodeDspInput(in, code)) {
+        const wire = switch (wire_codes.decodeInput(t, in, cxt, code)) {
             .wire => |w| w,
             else => continue,
         };
-        e.markChannelRead(tile.bigChannel(wire.side, e.config.model.grid), wire);
-    }
-}
+        const channel = if (comptime t.big())
+            tile.bigChannel(wire.side, e.config.model.grid)
+        else
+            tile.channel(wire.side, e.config.model.grid) orelse continue;
 
-fn collectIoReads(e: *TextEmitter, tile: common.TileCoords) void {
-    const config = e.config.getIo(tile);
-    const side = e.config.model.ioWireSide(tile);
-    for (std.enums.values(common.IoInput)) |in| {
-        const code = config.inputs.get(in);
-        if (code == 0) continue;
-        const wire = switch (wire_codes.decodeIoInput(in, side, code)) {
-            .wire => |w| w,
-            else => continue,
-        };
-        const channel = tile.channel(wire.side, e.config.model.grid) orelse continue;
         e.markChannelRead(channel, wire);
     }
 }
@@ -213,23 +166,21 @@ fn collectReads(e: *TextEmitter) void {
         }
     }
 
-    for (1..1 + model.grid.tileRows()) |row| {
-        for (1..1 + model.grid.tileCols()) |col| {
+    for (0..model.grid.rows) |row| {
+        for (0..model.grid.cols) |col| {
             const tile = common.TileCoords{
                 .row = @intCast(row),
                 .col = @intCast(col),
             };
-            switch (model.tileType(tile)) {
-                .inert, .io => unreachable,
-                .logic => e.collectLogicReads(tile),
-                .bram => if ((row - 1) % 4 == 0) e.collectBramReads(tile),
-                .dsp => if ((row - 1) % 4 == 0) e.collectDspReads(tile),
+
+            const actual_t = model.tileType(tile);
+            inline for (common.TileType.configurable) |t| {
+                if (actual_t == t) {
+                    e.collectTileReads(t, tile);
+                }
             }
         }
     }
-
-    for (1..1 + model.tile_counts.get(.io)) |pin|
-        e.collectIoReads(model.pinCoord(pin));
 }
 
 fn emitHeader(e: *TextEmitter) !void {
@@ -318,14 +269,14 @@ fn emitSwitchBlock(e: *TextEmitter, sw: common.SwitchCoords) !void {
     try w.writeAll("}\n\n");
 }
 
-fn getInput(t: anytype, in: anytype) u5 {
+fn getInput(cfg: anytype, in: anytype) u5 {
     switch (@typeInfo(@TypeOf(in))) {
         // LogicInput / IoInput: flat EnumArray on the tile struct
-        .@"enum" => return t.inputs.get(in),
+        .@"enum" => return cfg.inputs.get(in),
         // BramInput / DspInput: one field per tag, array index in the payload
         .@"union" => switch (in) {
             inline else => |idx, tag| {
-                const f = &@field(t, @tagName(tag));
+                const f = &@field(cfg, @tagName(tag));
                 if (@TypeOf(idx) == void)
                     return f.*
                 else
@@ -338,27 +289,23 @@ fn getInput(t: anytype, in: anytype) u5 {
 
 fn emitCommands(
     e: *TextEmitter,
-    comptime table: []const text_tables.Field,
-    comptime T: type,
-    comptime Input: type,
+    comptime meta: blocks.Metadata,
     comptime indent: []const u8,
     tile: common.TileCoords,
-    t: *const T,
+    cfg: *const meta.Config,
 ) !void {
     const w = &e.w.writer;
     try w.writeAll("{\n");
 
-    inline for (table) |f| {
+    inline for (meta.table) |f| {
         if (f.kind == .reg) {
             for (0..2) |i| {
-                const reg: *const Configuration.Logic.Reg = &t.*.regs[i];
+                const reg: *const Configuration.Logic.Reg = &cfg.*.regs[i];
                 if (std.meta.eql(reg.*, std.mem.zeroes(Configuration.Logic.Reg)))
                     continue;
                 try w.print("    reg {} ", .{i + 1});
                 try e.emitCommands(
-                    &text_tables.reg_table,
-                    Configuration.Logic.Reg,
-                    void,
+                    blocks.reg,
                     "    ",
                     tile,
                     reg,
@@ -369,7 +316,7 @@ fn emitCommands(
             if (std.mem.allEqual(u16, &data.data, 0))
                 break :blk;
             try w.writeAll("    data {\n");
-            const data_width: u16 = switch (t.*.width) {
+            const data_width: u16 = switch (cfg.*.width) {
                 0 => 1,
                 1 => 2,
                 2 => 4,
@@ -401,9 +348,9 @@ fn emitCommands(
         } else {
             for (0..f.width) |index| {
                 const v = if (f.width != 1)
-                    @field(t.*, f.field)[index]
+                    @field(cfg.*, f.field)[index]
                 else
-                    @field(t.*, f.field);
+                    @field(cfg.*, f.field);
 
                 // WIDTH has to precede `data {}` (§"Textual format"), so a
                 // width of 1 - which encodes as 0 - is written out anyway when
@@ -453,68 +400,20 @@ fn emitCommands(
         }
     }
 
-    if (Input != void) {
-        inline for (std.meta.fields(Input)) |f| {
-            const expected_input_word: [f.name.len]u8 = comptime blk: {
-                var buf: [f.name.len]u8 = undefined;
-                _ = std.ascii.upperString(&buf, f.name);
-                break :blk buf;
-            };
+    if (meta.tile) |t| {
+        for (0..t.Input().TOTAL) |idx| {
+            const in = t.Input().fromIdx(@intCast(idx));
+            const code = getInput(cfg, in);
+            if (code == 0) continue;
+            const cxt = e.config.model.inputCxt(t, tile);
+            const src = wire_codes.resolveInput(t, tile, in, cxt, code, e.config.model.grid);
+            if (src == .code)
+                e.warn(
+                    @tagName(t) ++ " ({},{}) in {f}: code {} names a wire that does not exist here",
+                    .{ tile.row, tile.col, in, code },
+                );
 
-            const input_width: usize = Input.WIDTHS.get(@field(Input, f.name));
-            const input_variant: []const u8 = f.name;
-            for (0..@max(1, input_width)) |index| {
-                const in = if (@typeInfo(Input) == .@"enum")
-                    @field(Input, input_variant)
-                else if (f.type == void)
-                    @unionInit(Input, input_variant, {})
-                else
-                    @unionInit(Input, input_variant, @intCast(index));
-
-                const code = getInput(t, in);
-
-                if (code == 0) continue;
-
-                try w.writeAll(indent ++ "    in " ++ expected_input_word);
-                if (input_width != 1)
-                    try w.print("[{}]", .{index});
-                try w.writeAll(" = ");
-
-                const grid = e.config.model.grid;
-                const block_name = if (Input == common.LogicInput)
-                    "logic"
-                else if (Input == common.BramInput)
-                    "bram"
-                else if (Input == common.DspInput)
-                    "dsp"
-                else if (Input == common.IoInput)
-                    "io"
-                else
-                    @compileError("Incorrect Input type");
-
-                const src = if (Input == common.LogicInput)
-                    wire_codes.resolveLogicInput(tile, in, code, grid)
-                else if (Input == common.BramInput)
-                    wire_codes.resolveBramInput(tile, in, code, grid)
-                else if (Input == common.DspInput)
-                    wire_codes.resolveDspInput(tile, in, code, grid)
-                else
-                    wire_codes.resolveIoInput(
-                        tile,
-                        in,
-                        e.config.model.ioWireSide(tile),
-                        code,
-                        grid,
-                    );
-
-                if (src == .code)
-                    e.warn(
-                        block_name ++ " ({},{}) in {f}: code {} names a wire that does not exist here",
-                        .{ tile.row, tile.col, in, code },
-                    );
-
-                try w.print("{f};\n", .{src});
-            }
+            try w.print(indent ++ "    in {f} = {f};\n", .{ in, src });
         }
     }
 
@@ -527,9 +426,7 @@ fn emitGlobalBlock(e: *TextEmitter) !void {
     const w = &e.w.writer;
     try w.writeAll("global ");
     try e.emitCommands(
-        &text_tables.global_table,
-        Configuration.Global,
-        void,
+        blocks.global,
         "",
         undefined,
         &e.config.global,
@@ -537,72 +434,21 @@ fn emitGlobalBlock(e: *TextEmitter) !void {
     try w.writeAll("\n");
 }
 
-fn emitLogicBlock(e: *TextEmitter, tile: common.TileCoords) !void {
-    if (std.meta.eql(e.config.getLogic(tile).*, std.mem.zeroes(Configuration.Logic)))
-        return;
-    const w = &e.w.writer;
-    try w.print("logic ({}, {}) ", .{ tile.row, tile.col });
-    try e.emitCommands(
-        &text_tables.logic_table,
-        Configuration.Logic,
-        common.LogicInput,
-        "",
-        tile,
-        e.config.getLogic(tile),
-    );
-    try w.writeAll("\n");
-}
+fn emitTileBlock(e: *TextEmitter, comptime meta: blocks.Metadata, tile: common.TileCoords) !void {
+    const t = meta.tile.?;
+    if (!t.carriesConfig(tile)) return;
 
-fn emitBramBlock(e: *TextEmitter, tile: common.TileCoords) !void {
-    if ((tile.row - 1) % 4 != 0) return;
-    const bram = e.config.getBram(tile);
-    const bram_data = e.config.getBramData(tile);
-    if (std.meta.eql(bram.*, std.mem.zeroes(Configuration.Bram)) and
-        std.mem.allEqual(u16, &bram_data.data, 0))
+    const cfg = e.config.get(t, tile);
+    const config_empty = std.meta.eql(cfg.*, std.mem.zeroes(meta.Config));
+    const data_empty = if (t == .bram)
+        std.mem.allEqual(u16, &e.config.getBramData(tile).data, 0)
+    else
+        true;
+    if (config_empty and data_empty)
         return;
     const w = &e.w.writer;
-    try w.print("bram ({}, {}) ", .{ tile.row, tile.col });
-    try e.emitCommands(
-        &text_tables.bram_table,
-        Configuration.Bram,
-        common.BramInput,
-        "",
-        tile,
-        e.config.getBram(tile),
-    );
-    try w.writeAll("\n");
-}
-
-fn emitDspBlock(e: *TextEmitter, tile: common.TileCoords) !void {
-    if ((tile.row - 1) % 4 != 0) return;
-    if (std.meta.eql(e.config.getDsp(tile).*, std.mem.zeroes(Configuration.Dsp)))
-        return;
-    const w = &e.w.writer;
-    try w.print("dsp ({}, {}) ", .{ tile.row, tile.col });
-    try e.emitCommands(
-        &text_tables.dsp_table,
-        Configuration.Dsp,
-        common.DspInput,
-        "",
-        tile,
-        e.config.getDsp(tile),
-    );
-    try w.writeAll("\n");
-}
-
-fn emitIoBlock(e: *TextEmitter, tile: common.TileCoords) !void {
-    if (std.meta.eql(e.config.getIo(tile).*, std.mem.zeroes(Configuration.Io)))
-        return;
-    const w = &e.w.writer;
-    try w.print("io ({}, {}) ", .{ tile.row, tile.col });
-    try e.emitCommands(
-        &text_tables.io_table,
-        Configuration.Io,
-        common.IoInput,
-        "",
-        tile,
-        e.config.getIo(tile),
-    );
+    try w.print("{s} ({}, {}) ", .{ @tagName(t), tile.row, tile.col });
+    try e.emitCommands(meta, "", tile, cfg);
     try w.writeAll("\n");
 }
 
@@ -628,11 +474,10 @@ pub fn emit(config: *const Configuration, alloc: std.mem.Allocator) Result {
                 .row = @intCast(row),
                 .col = @intCast(col),
             };
-            switch (config.model.tileType(tile)) {
-                .inert, .io => unreachable,
-                .logic => e.emitLogicBlock(tile) catch common.oom(),
-                .bram => e.emitBramBlock(tile) catch common.oom(),
-                .dsp => e.emitDspBlock(tile) catch common.oom(),
+
+            inline for (blocks.tile_blocks) |meta| {
+                if (config.model.tileType(tile) == meta.tile.?)
+                    e.emitTileBlock(meta, tile) catch common.oom();
             }
         }
     }
@@ -640,7 +485,7 @@ pub fn emit(config: *const Configuration, alloc: std.mem.Allocator) Result {
     for (1..1 + config.model.tile_counts.get(.io)) |pin| {
         const tile = config.model.pinCoord(pin);
         std.debug.assert(config.model.tileType(tile) == .io);
-        e.emitIoBlock(tile) catch common.oom();
+        e.emitTileBlock(blocks.io, tile) catch common.oom();
     }
 
     return .{

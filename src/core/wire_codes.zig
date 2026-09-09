@@ -206,16 +206,6 @@ pub fn decodeLogicInput(in: common.LogicInput, code: u5) LogicInputSrc {
     }
 }
 
-pub fn encodeLogicInput(in: common.LogicInput, src: LogicInputSrc) ?u5 {
-    if (src == .code) return src.code;
-    for (0..32) |i| {
-        const code: u5 = @intCast(i);
-        if (std.meta.eql(decodeLogicInput(in, code), src))
-            return code;
-    }
-    return null;
-}
-
 pub const BramInputSrc = union(enum) {
     zero: void,
     one: void,
@@ -392,20 +382,6 @@ pub fn decodeBramInput(in: common.BramInput, code: u5) BramInputSrc {
             },
         },
     }
-}
-
-pub fn encodeBramInput(in: common.BramInput, src: BramInputSrc) ?u5 {
-    if (src == .code) return src.code;
-    const code_count: usize = switch (in) {
-        .a1, .a2, .di => 16,
-        .we1, .we2 => 32,
-    };
-    for (0..code_count) |i| {
-        const code: u5 = @intCast(i);
-        if (std.meta.eql(decodeBramInput(in, code), src))
-            return code;
-    }
-    return null;
 }
 
 pub const DspInputSrc = union(enum) {
@@ -614,16 +590,6 @@ pub fn decodeDspInput(in: common.DspInput, code: u5) DspInputSrc {
     }
 }
 
-pub fn encodeDspInput(in: common.DspInput, src: DspInputSrc) ?u5 {
-    if (src == .code) return src.code;
-    for (0..32) |i| {
-        const code: u5 = @intCast(i);
-        if (std.meta.eql(decodeDspInput(in, code), src))
-            return code;
-    }
-    return null;
-}
-
 pub const IoInputSrc = union(enum) {
     zero: void,
     one: void,
@@ -693,16 +659,6 @@ pub fn decodeIoInput(in: common.IoInput, side: common.Side, code: u5) IoInputSrc
             ) };
         },
     }
-}
-
-pub fn encodeIoInput(in: common.IoInput, side: common.Side, src: IoInputSrc) ?u5 {
-    if (src == .code) return src.code;
-    for (0..32) |i| {
-        const code: u5 = @intCast(i);
-        if (std.meta.eql(decodeIoInput(in, side, code), src))
-            return code;
-    }
-    return null;
 }
 
 pub const SwitchSinkSrc = union(enum) {
@@ -891,41 +847,54 @@ pub fn resolveSwitchSink(
     return src;
 }
 
-pub fn resolveLogicInput(
-    tile: common.TileCoords,
-    in: common.LogicInput,
-    code: u5,
-    grid: common.GridSize,
-) LogicInputSrc {
-    return resolveTileInput(tile, decodeLogicInput(in, code), code, grid);
+pub fn InputSrc(t: common.TileType) type {
+    return switch (t) {
+        .inert => void,
+        .logic => LogicInputSrc,
+        .bram => BramInputSrc,
+        .dsp => DspInputSrc,
+        .io => IoInputSrc,
+    };
 }
 
-pub fn resolveIoInput(
-    tile: common.TileCoords,
-    in: common.IoInput,
-    side: common.Side,
-    code: u5,
-    grid: common.GridSize,
-) IoInputSrc {
-    return resolveTileInput(tile, decodeIoInput(in, side, code), code, grid);
+pub fn decodeInput(comptime t: common.TileType, in: t.Input(), cxt: t.Input().Cxt, code: u5) InputSrc(t) {
+    return switch (t) {
+        .inert => comptime unreachable,
+        .logic => decodeLogicInput(in, code),
+        .bram => decodeBramInput(in, code),
+        .dsp => decodeDspInput(in, code),
+        .io => decodeIoInput(in, cxt, code),
+    };
 }
 
-pub fn resolveBramInput(
-    tile: common.TileCoords,
-    in: common.BramInput,
-    code: u5,
-    grid: common.GridSize,
-) BramInputSrc {
-    return resolveTileInput(tile, decodeBramInput(in, code), code, grid);
+pub fn encodeInput(comptime t: common.TileType, in: t.Input(), cxt: t.Input().Cxt, src: InputSrc(t)) ?u5 {
+    if (src == .code) return src.code;
+    const max_codes: usize = if (t == .bram)
+        switch (in) {
+            .a1, .a2, .di => 16,
+            .we1, .we2 => 32,
+        }
+    else
+        32;
+    for (0..max_codes) |i| {
+        const code: u5 = @intCast(i);
+        const found_code: InputSrc(t) = decodeInput(t, in, cxt, code);
+        if (std.meta.eql(found_code, src))
+            return code;
+    }
+    return null;
 }
 
-pub fn resolveDspInput(
+pub fn resolveInput(
+    comptime t: common.TileType,
     tile: common.TileCoords,
-    in: common.DspInput,
+    in: t.Input(),
+    cxt: t.Input().Cxt,
     code: u5,
     grid: common.GridSize,
-) DspInputSrc {
-    return resolveTileInput(tile, decodeDspInput(in, code), code, grid);
+) InputSrc(t) {
+    const src: InputSrc(t) = decodeInput(t, in, cxt, code);
+    return resolveTileInput(tile, src, code, grid);
 }
 
 test "encode is the inverse of decode" {
@@ -934,7 +903,12 @@ test "encode is the inverse of decode" {
             const code: u5 = @intCast(i);
             try std.testing.expectEqual(
                 code,
-                encodeLogicInput(in, decodeLogicInput(in, code)),
+                encodeInput(
+                    .logic,
+                    in,
+                    {},
+                    decodeLogicInput(in, code),
+                ),
             );
         }
     }
@@ -949,7 +923,12 @@ test "encode is the inverse of decode" {
             const code: u5 = @intCast(i);
             try std.testing.expectEqual(
                 code,
-                encodeBramInput(in, decodeBramInput(in, code)),
+                encodeInput(
+                    .bram,
+                    in,
+                    {},
+                    decodeBramInput(in, code),
+                ),
             );
         }
     }
@@ -960,7 +939,12 @@ test "encode is the inverse of decode" {
             const code: u5 = @intCast(i);
             try std.testing.expectEqual(
                 code,
-                encodeDspInput(in, decodeDspInput(in, code)),
+                encodeInput(
+                    .dsp,
+                    in,
+                    {},
+                    decodeDspInput(in, code),
+                ),
             );
         }
     }
@@ -971,7 +955,12 @@ test "encode is the inverse of decode" {
                 const code: u5 = @intCast(i);
                 try std.testing.expectEqual(
                     code,
-                    encodeIoInput(in, side, decodeIoInput(in, side, code)),
+                    encodeInput(
+                        .io,
+                        in,
+                        side,
+                        decodeIoInput(in, side, code),
+                    ),
                 );
             }
         }
@@ -1055,22 +1044,22 @@ test "resolveLogicInput flags an L4 truncated past the grid corner" {
     // Code 7 is N[R].L4[0], whose segment starts at switchbox (0,0).
     try std.testing.expectEqual(
         decodeLogicInput(.a1, 7),
-        resolveLogicInput(tile, .a1, 7, mica1s_grid),
+        resolveInput(.logic, tile, .a1, {}, 7, mica1s_grid),
     );
 
     // Code 10 is N[R].L4[2], which would have to start three boxes further west.
     try std.testing.expectEqual(
         LogicInputSrc{ .code = 10 },
-        resolveLogicInput(tile, .a1, 10, mica1s_grid),
+        resolveInput(.logic, tile, .a1, {}, 10, mica1s_grid),
     );
 
     // Constants and local outputs are never geometric.
     try std.testing.expectEqual(
         LogicInputSrc.zero,
-        resolveLogicInput(tile, .a1, 0, mica1s_grid),
+        resolveInput(.logic, tile, .a1, {}, 0, mica1s_grid),
     );
     try std.testing.expectEqual(
         LogicInputSrc{ .local = .o1a },
-        resolveLogicInput(tile, .a1, 2, mica1s_grid),
+        resolveInput(.logic, tile, .a1, {}, 2, mica1s_grid),
     );
 }

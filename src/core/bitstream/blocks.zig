@@ -1,6 +1,59 @@
 const std = @import("std");
 const common = @import("../common.zig");
-const wire_codes = @import("../wire_codes.zig");
+const Configuration = @import("../Configuration.zig");
+
+pub const Metadata = struct {
+    tile: ?common.TileType = null,
+    Config: type,
+    table: []const Field,
+
+    // Only actual tiles can have inputs
+    pub fn hasInputs(m: Metadata) bool {
+        return m.tile != null;
+    }
+
+    pub fn name(m: Metadata) []const u8 {
+        if (m.tile) |t| return @tagName(t);
+
+        return switch (m.Config) {
+            Configuration.Global => "global",
+            Configuration.Logic.Reg => "reg",
+            else => @compileError("Invalid metadata with Config = " ++ @typeName(m.Config)),
+        };
+    }
+};
+
+pub const global = Metadata{
+    .Config = Configuration.Global,
+    .table = &global_table,
+};
+pub const reg = Metadata{
+    .Config = Configuration.Logic.Reg,
+    .table = &reg_table,
+};
+
+pub const logic = Metadata{
+    .tile = .logic,
+    .Config = Configuration.Logic,
+    .table = &logic_table,
+};
+pub const bram = Metadata{
+    .tile = .bram,
+    .Config = Configuration.Bram,
+    .table = &bram_table,
+};
+pub const dsp = Metadata{
+    .tile = .dsp,
+    .Config = Configuration.Dsp,
+    .table = &dsp_table,
+};
+pub const io = Metadata{
+    .tile = .io,
+    .Config = Configuration.Io,
+    .table = &io_table,
+};
+
+pub const tile_blocks = [_]Metadata{ logic, bram, dsp, io };
 
 pub const ValueKind = union(enum) {
     bit: void,
