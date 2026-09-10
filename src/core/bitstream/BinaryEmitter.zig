@@ -154,7 +154,7 @@ fn emitBramTiles(e: *BinaryEmitter) !void {
         }
 
         // 6 bits
-        e.frame_w.write(u3, config.width);
+        e.frame_w.write(u3, @intFromEnum(config.width));
         e.frame_w.write(u3, config.clk);
 
         // 4 x 12 = 48 bits

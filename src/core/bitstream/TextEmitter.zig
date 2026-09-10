@@ -298,13 +298,9 @@ fn emitCommands(
             if (std.mem.allEqual(u16, &data.data, 0))
                 break :blk;
             try w.writeAll("    data {\n");
-            const data_width: u16 = switch (cfg.*.width) {
-                0 => 1,
-                1 => 2,
-                2 => 4,
-                3 => 8,
-                4 => 16,
-                5...7 => 16,
+            const data_width: u16 = switch (cfg.width) {
+                .w1, .w2, .w4, .w8, .w16 => cfg.width.int(),
+                else => 16,
             };
             const addr_depth = 4096 / data_width;
             inline for (
@@ -369,12 +365,8 @@ fn emitCommands(
                     .clk => try w.print("CLK{}", .{v}),
                     .rst => try w.print("RST{}", .{v}),
                     .width => switch (v) {
-                        0 => try w.writeAll("1"),
-                        1 => try w.writeAll("2"),
-                        2 => try w.writeAll("4"),
-                        3 => try w.writeAll("8"),
-                        4 => try w.writeAll("16"),
-                        5...7 => try w.print("code {}", .{v}),
+                        .w1, .w2, .w4, .w8, .w16 => try w.print("{}", .{v.int()}),
+                        else => try w.print("code {}", .{@intFromEnum(v)}),
                     },
                 }
                 try w.writeAll(";\n");

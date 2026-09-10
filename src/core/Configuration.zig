@@ -48,7 +48,7 @@ pub const Logic = struct {
 };
 
 pub const Bram = struct {
-    width: u3,
+    width: common.BramWidth,
     clk: u3,
 
     a1: [12]u4,

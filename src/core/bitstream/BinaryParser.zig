@@ -243,7 +243,7 @@ fn parseBramTiles(p: *BinaryParser, f: *Frame) error{ParsingError}!void {
 
     for (p.config.?.bram[start_idx..]) |*config| {
         // 6 bits
-        config.width = f.r.read(u3) orelse return;
+        config.width = @enumFromInt(f.r.read(u3) orelse return);
         config.clk = f.r.read(u3) orelse return;
 
         // 4 x 12 = 48 bits

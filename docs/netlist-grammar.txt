@@ -151,10 +151,6 @@ CellLogicalType =
 | '$rom_dual'
 | '$ram'
 | '$ram_dual'
-| '$input'
-| '$output'
-| '$bidir'
-| '$blackbox'
 
 CellCommand =
   SignalName '=' Number(?) ';'
@@ -166,7 +162,7 @@ CellCommand =
 | BramData
 | Metadata
 
-Slot = ('LE1' | 'LE2') ('.' 'A' | '.' 'B')?
+Slot = ('LE1' | 'LE2') ('A' | 'B')?
 
 // ADDR_WIDTH and DATA_WIDTH are the address and data widths implied by the
 // WIDTH command of the enclosing bram block (see "Block RAM tile").

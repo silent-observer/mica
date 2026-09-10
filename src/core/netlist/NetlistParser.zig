@@ -188,7 +188,7 @@ fn parseSignalName(p: *NetlistParser) !SignalName {
 fn parseNet(p: *NetlistParser) !void {
     // 'net' already parsed
     const name = try p.parseSignalName();
-    const kind: Netlist.NetKind = if (p.p.check(':')) blk: {
+    const kind: ?Netlist.NetKind = if (p.p.check(':')) blk: {
         try p.p.expect(':');
         const word = try p.p.parseWord();
 
@@ -198,15 +198,25 @@ fn parseNet(p: *NetlistParser) !void {
             break :blk .reset
         else
             try p.p.err("Unknown net type: '{s}'", .{word});
-    } else .net;
+    } else null;
 
-    const net_name_id = p.nl().getNetNameId(name.name, kind);
-    const old_kind = p.nl().getNetKind(net_name_id);
-    if (kind != .net and kind != old_kind)
-        try p.p.err(
-            "Net redeclared with a different kind: was '{s}'', became '{s}'",
-            .{ @tagName(old_kind), @tagName(kind) },
-        );
+    const net_name_id = p.nl().getNetNameId(name.name, kind) catch {
+        const old = p.nl().findNetKind(name.name).?;
+        if (old == .net)
+            try p.p.err(
+                "Net '{s}' was already used as a plain net, so it cannot be " ++
+                    "declared as a {s} net; a net's kind has to be given at " ++
+                    "its first mention",
+                .{ name.name, @tagName(kind.?) },
+            )
+        else
+            try p.p.err(
+                "Net '{s}' is already declared as a {s} net, " ++
+                    "so it cannot be declared as a {s} net",
+                .{ name.name, @tagName(old), @tagName(kind.?) },
+            );
+    };
+    const actual_kind = p.nl().getNetKind(net_name_id);
 
     const net_count = name.totalCount();
     if (p.p.check(';')) {
@@ -244,21 +254,21 @@ fn parseNet(p: *NetlistParser) !void {
     while (!p.p.checkEof() and !p.p.check('}')) {
         const word = try p.p.parseWord();
         if (std.mem.eql(u8, word, "route")) { // Net route
-            if (old_kind != .net)
+            if (actual_kind != .net)
                 try p.p.err(
                     "'route' block can only be set for normal nets, '{f}' is '{s}'",
-                    .{ name, @tagName(kind) },
+                    .{ name, @tagName(actual_kind) },
                 );
             const net = p.nl().getNet(net_ref);
             try p.parseNetRoute(net);
         } else blk: {
             inline for (net_params) |param| {
                 if (std.mem.eql(u8, word, param.word)) {
-                    if (std.mem.indexOfScalar(Netlist.NetKind, param.kinds, old_kind) == null)
+                    if (std.mem.indexOfScalar(Netlist.NetKind, param.kinds, actual_kind) == null)
                         try p.p.err(
                             param.word ++ " can only be set for " ++ param.phrase ++
                                 ", '{f}' is '{s}'",
-                            .{ name, @tagName(kind) },
+                            .{ name, @tagName(actual_kind) },
                         );
 
                     const global_net = p.nl().getGlobalNet(net_ref);
@@ -346,9 +356,151 @@ fn parseNetRoute(p: *NetlistParser, net: *Netlist.Net) !void {
     net.route_len = count;
 }
 
-fn parseCell(_: *NetlistParser) !void {
+pub const logical_cell_types: std.StaticStringMap(Netlist.CellType) = .initComptime(blk: {
+    const logi = std.enums.values(Netlist.LogicalCellType);
+    var entries: [logi.len]struct { []const u8, Netlist.CellType } = undefined;
+    for (logi, &entries) |t, *entry|
+        entry.* = .{ @tagName(t), .{ .logical = t } };
+    break :blk entries;
+});
+
+pub const physical_cell_types: std.StaticStringMap(Netlist.CellType) = .initComptime(blk: {
+    const phys = std.enums.values(Netlist.PhysicalCellType);
+    var entries: [phys.len]struct { []const u8, Netlist.CellType } = undefined;
+    for (phys, &entries) |t, *entry|
+        entry.* = .{
+            Netlist.PhysicalCellType.names.get(t),
+            .{ .physical = t },
+        };
+    break :blk entries;
+});
+
+const slots_table: std.StaticStringMap(Netlist.SlotId) = .initComptime(.{
+    .{ "LE1", .le1 },
+    .{ "LE2", .le2 },
+    .{ "LE1A", .le1a },
+    .{ "LE2A", .le2a },
+    .{ "LE1B", .le1b },
+    .{ "LE2B", .le2b },
+});
+
+fn parseCommonCellCommand(
+    p: *NetlistParser,
+    cell: *Netlist.Cell,
+) !bool {
+    const m = p.p.mark();
+    const word = try p.p.parseWord();
+    if (std.mem.eql(u8, word, "in")) {
+        @panic("TODO");
+    } else if (std.mem.eql(u8, word, "out")) {
+        @panic("TODO");
+    } else if (std.mem.eql(u8, word, "PACK")) {
+        try p.p.expect('=');
+        const pack_word = try p.parseName();
+        cell.pack = p.nl().getPackId(pack_word);
+        try p.p.expect(';');
+    } else if (std.mem.eql(u8, word, "SLOT")) {
+        try p.p.expect('=');
+        const slot_word = try p.parseName();
+        cell.slot = if (slots_table.get(slot_word)) |s|
+            s
+        else
+            try p.p.err(
+                "Invalid slot name: '{s}', only LE[12][AB]? are supported",
+                .{slot_word},
+            );
+        try p.p.expect(';');
+    } else if (std.mem.eql(u8, word, "SITE")) {
+        try p.p.expect('=');
+        cell.site = try p.p.parseTileCoords(&p.nl().model);
+        try p.p.expect(';');
+    } else {
+        p.p.reset(m);
+        return false;
+    }
+
+    return true;
+}
+
+fn parseParamValue(p: *NetlistParser, comptime V: type) !V {
+    return switch (V) {
+        common.BramWidth => switch (try p.p.parseNumber(u16)) {
+            1 => .w1,
+            2 => .w2,
+            4 => .w4,
+            8 => .w8,
+            16 => .w16,
+            else => |x| try p.p.err(
+                "BRAM width can only be 1, 2, 4, 8 or 16, not {}",
+                .{x},
+            ),
+        },
+        else => try p.p.parseNumber(V),
+    };
+}
+
+fn parseCellBody(p: *NetlistParser, cell: *Netlist.Cell) !void {
+    try p.p.expect('{');
+    outer: while (!p.p.checkEof() and !p.p.check('}')) {
+        if (try p.parseCommonCellCommand(cell)) continue;
+
+        const param_name = try p.p.parseWord();
+        switch (cell.params) {
+            inline else => |*kind_params| switch (kind_params.*) {
+                inline else => |*params| {
+                    inline for (std.meta.fields(@TypeOf(params.*))) |f| {
+                        if (std.mem.eql(u8, param_name, comptime common.upper(f.name))) {
+                            try p.p.expect('=');
+                            const V = @typeInfo(f.type).optional.child;
+                            @field(params.*, f.name) =
+                                try p.parseParamValue(V);
+                            try p.p.expect(';');
+                            continue :outer;
+                        }
+                    }
+                },
+            },
+        }
+        // Fell through every field of the active Params struct.
+        try p.p.err(
+            "Cell '{f}' has no parameter '{s}'",
+            .{ cell.cellType(), param_name },
+        );
+    }
+    try p.p.expect('}');
+}
+
+fn parseCell(p: *NetlistParser) !void {
     // 'cell' already parsed
-    @panic("TODO!");
+    const name = try p.parseName();
+    const new_t: ?Netlist.CellType = if (p.p.check(':')) blk: {
+        try p.p.expect(':');
+
+        if (p.p.check('$')) {
+            try p.p.expect('$');
+            const word = try p.p.parseWord();
+            if (logical_cell_types.get(word)) |c|
+                break :blk c
+            else
+                try p.p.err("Unknown cell type: '${s}'", .{word});
+        } else {
+            const word = try p.p.parseWord();
+            if (physical_cell_types.get(word)) |c|
+                break :blk c
+            else
+                try p.p.err("Unknown cell type: '{s}'", .{word});
+        }
+    } else null;
+
+    const cell_id = p.nl().getCellId(name, new_t) catch |e| switch (e) {
+        error.UnknownCellType => try p.p.err("Cell type for '{s}' was not specified", .{name}),
+        error.CellTypeConflict => try p.p.err(
+            "Cell '{s}' redeclared with a different type '{f}'",
+            .{ name, new_t.? },
+        ),
+    };
+    const cell = p.nl().getCell(cell_id);
+    try p.parseCellBody(cell);
 }
 
 pub const Result = struct {
@@ -384,4 +536,43 @@ pub fn parse(input: []const u8, alloc: std.mem.Allocator) Result {
         .netlist = p.netlist,
         .err = p.p.errorText,
     };
+}
+
+test "net kind is fixed at first mention" {
+    const header = "format 1;\ndevice \"M1/S\";\ndesign \"t\";\n";
+    const cases = [_]struct { src: []const u8, want: ?[]const u8 }{
+        // A kind may be restated as long as it agrees, in either order.
+        .{ .src = "net a : clock;\nnet a;\n", .want = null },
+        .{ .src = "net a : clock;\nnet a : clock;\n", .want = null },
+        .{ .src = "net a;\nnet a;\n", .want = null },
+        // Contradicting an explicit kind.
+        .{
+            .src = "net a : clock;\nnet a : reset;\n",
+            .want = "already declared as a clock net",
+        },
+        // Annotating a name that an earlier mention already pinned to .net.
+        .{
+            .src = "net a;\nnet a : clock;\n",
+            .want = "already used as a plain net",
+        },
+    };
+
+    for (cases) |case| {
+        const src = try std.mem.concat(
+            std.testing.allocator,
+            u8,
+            &.{ header, case.src },
+        );
+        defer std.testing.allocator.free(src);
+
+        const r = parse(src, std.testing.allocator);
+        defer r.deinit(std.testing.allocator);
+
+        if (case.want) |want| {
+            try std.testing.expect(r.err != null);
+            try std.testing.expect(std.mem.indexOf(u8, r.err.?, want) != null);
+        } else {
+            try std.testing.expectEqual(@as(?[]const u8, null), r.err);
+        }
+    }
 }

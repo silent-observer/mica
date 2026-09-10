@@ -791,6 +791,26 @@ pub const DspInput = union(enum) {
     }
 };
 
+pub const BramWidth = enum(u3) {
+    w1 = 0,
+    w2 = 1,
+    w4 = 2,
+    w8 = 3,
+    w16 = 4,
+    _,
+
+    pub fn int(w: BramWidth) u16 {
+        return switch (w) {
+            .w1 => 1,
+            .w2 => 2,
+            .w4 => 4,
+            .w8 => 8,
+            .w16 => 16,
+            else => unreachable,
+        };
+    }
+};
+
 pub const BIG_TILE_HEIGHT = 4;
 
 pub const BigEdge = enum {
@@ -858,4 +878,14 @@ pub const BigEdge = enum {
 
 pub fn oom() noreturn {
     @panic("Out of memory!");
+}
+
+pub fn upper(comptime str: []const u8) []const u8 {
+    return comptime blk: {
+        var buf: [str.len]u8 = undefined;
+        for (str, 0..) |c, i|
+            buf[i] = std.ascii.toUpper(c);
+        const buf_final = buf;
+        break :blk &buf_final;
+    };
 }

@@ -1,6 +1,7 @@
 const std = @import("std");
 const common = @import("../common.zig");
 const DeviceModel = @import("../DeviceModel.zig");
+const Interner = @import("Interner.zig").Interner;
 
 const Netlist = @This();
 
@@ -18,11 +19,12 @@ nets: std.ArrayList(Net),
 global_nets: std.ArrayList(GlobalNet),
 route_edges: std.ArrayList(RouteEdge),
 
-net_names: std.StringHashMapUnmanaged(NetNameId),
+net_names: Interner(NetNameId),
+cell_names: Interner(CellId),
+pack_names: Interner(PackId),
+
 net_kinds: std.ArrayList(NetKind),
 net_refs: std.AutoHashMapUnmanaged(NetKey, NetRef),
-cell_names: std.StringHashMapUnmanaged(CellId),
-pack_names: std.StringHashMapUnmanaged(PackId),
 
 pub const Pass = enum { synth, opt, techmap, pack, place, route };
 
@@ -84,6 +86,16 @@ pub const SlotId = enum {
 pub const CellType = union(enum) {
     physical: PhysicalCellType,
     logical: LogicalCellType,
+
+    pub fn format(
+        self: @This(),
+        writer: *std.Io.Writer,
+    ) std.Io.Writer.Error!void {
+        switch (self) {
+            .physical => |t| try writer.writeAll(PhysicalCellType.names.get(t)),
+            .logical => |t| try writer.print("${s}", .{@tagName(t)}),
+        }
+    }
 };
 pub const PhysicalCellType = enum {
     lut4,
@@ -97,6 +109,30 @@ pub const PhysicalCellType = enum {
     dsp,
     dsp_acc,
     io,
+
+    pub const names = blk: {
+        var r: std.EnumArray(PhysicalCellType, []const u8) = .initUndefined();
+        for (std.enums.values(PhysicalCellType)) |t|
+            r.set(t, common.upper(@tagName(t)));
+        break :blk r;
+    };
+
+    pub const ParamsUnion = union(PhysicalCellType) {
+        lut4: struct { lut: ?u16 = null },
+        lut3: struct { lut: ?u8 = null },
+        ff: struct {},
+        carry: struct { lut_p: ?u8 = null, lut_g: ?u8 = null },
+        mem: struct { init: ?u32 = null },
+        mem_dual: struct { init0: ?u16 = null, init1: ?u16 = null },
+        bram: BramParams,
+        bram_dual: BramParams,
+        dsp: DspParams,
+        dsp_acc: DspParams,
+        io: struct { pin: ?u16 = null, pullup: ?bool = null, pulldown: ?bool = null },
+
+        const BramParams = struct { width: ?common.BramWidth = null };
+        const DspParams = struct { signed_a: ?bool = null, signed_b: ?bool = null };
+    };
 };
 pub const LogicalCellType = enum {
     add,
@@ -111,25 +147,44 @@ pub const LogicalCellType = enum {
     and_all,
     or_all,
     xor_all,
-    ff_logical,
+    ff,
     rom,
     rom_dual,
     ram,
     ram_dual,
-    input,
-    output,
-    bidir,
-    blackbox,
+
+    pub const ParamsUnion = union(LogicalCellType) {
+        add: WidthOnlyParams,
+        sub: WidthOnlyParams,
+        mul: struct { width: ?u16 = null, signed_a: ?bool = null, signed_b: ?bool = null },
+        mux: struct { width: ?u16 = null, depth: ?u8 = null },
+        decode: struct { depth: ?u8 = null },
+        @"and": WidthOnlyParams,
+        @"or": WidthOnlyParams,
+        xor: WidthOnlyParams,
+        not: WidthOnlyParams,
+        and_all: NOnlyParams,
+        or_all: NOnlyParams,
+        xor_all: NOnlyParams,
+        ff: WidthOnlyParams,
+        rom: MemoryParams,
+        rom_dual: MemoryParams,
+        ram: MemoryParams,
+        ram_dual: MemoryParams,
+
+        const WidthOnlyParams = struct { width: ?u16 = null };
+        const NOnlyParams = struct { n: ?u16 = null };
+        const MemoryParams = struct { data_width: ?u16 = null, addr_width: ?u16 = null };
+    };
 };
 
-pub const MAX_PARAMS = 4;
 pub const MAX_INDEXES = 4;
 
 pub const Cell = struct {
-    t: CellType,
-    name: []const u8,
-    params: [MAX_PARAMS]u32 = undefined,
-    present: u16 = 0,
+    params: union(std.meta.Tag(CellType)) {
+        physical: PhysicalCellType.ParamsUnion,
+        logical: LogicalCellType.ParamsUnion,
+    },
     ins_start: u32 = 0,
     ins_len: u16 = 0,
     outs_start: u32 = 0,
@@ -139,6 +194,40 @@ pub const Cell = struct {
     pack: PackId = .none,
     slot: SlotId = .none,
     site: ?common.TileCoords = null,
+
+    pub fn cellType(c: *const Cell) CellType {
+        return switch (c.params) {
+            .physical => |p| .{ .physical = std.meta.activeTag(p) },
+            .logical => |l| .{ .logical = std.meta.activeTag(l) },
+        };
+    }
+
+    pub fn init(t: CellType) Cell {
+        return switch (t) {
+            .physical => |p| Cell{
+                .params = .{
+                    .physical = switch (p) {
+                        inline else => |cp| @unionInit(
+                            PhysicalCellType.ParamsUnion,
+                            @tagName(cp),
+                            .{},
+                        ),
+                    },
+                },
+            },
+            .logical => |l| Cell{
+                .params = .{
+                    .logical = switch (l) {
+                        inline else => |cl| @unionInit(
+                            LogicalCellType.ParamsUnion,
+                            @tagName(cl),
+                            .{},
+                        ),
+                    },
+                },
+            },
+        };
+    }
 };
 
 pub const NetKey = struct {
@@ -177,9 +266,6 @@ pub const GlobalNet = struct {
     pin: ?u16 = null,
 };
 
-/// Initialises in place: `str_arena` has to be at its final address before
-/// anything is allocated from it, or the allocation lands in a copy that is
-/// then dropped.
 pub fn init(
     self: *Netlist,
     alloc: std.mem.Allocator,
@@ -226,14 +312,22 @@ pub fn deinit(self: *Netlist) void {
     self.pack_names.deinit(self.alloc);
 }
 
-pub fn getNetNameId(self: *Netlist, name: []const u8, kind: NetKind) NetNameId {
-    const entry = self.net_names.getOrPut(self.alloc, name) catch common.oom();
-    if (!entry.found_existing) {
-        entry.key_ptr.* = self.str_arena.allocator().dupe(u8, name) catch common.oom();
-        entry.value_ptr.* = @enumFromInt(self.net_kinds.items.len);
-        self.net_kinds.append(self.alloc, kind) catch common.oom();
+pub fn getNetNameId(
+    self: *Netlist,
+    name: []const u8,
+    kind: ?NetKind,
+) error{NetKindConflict}!NetNameId {
+    const id = self.net_names.intern(self.alloc, self.str_arena.allocator(), name);
+    const idx: usize = @intFromEnum(id);
+
+    std.debug.assert(idx <= self.net_kinds.items.len);
+    if (idx == self.net_kinds.items.len) {
+        self.net_kinds.append(self.alloc, kind orelse .net) catch common.oom();
+    } else if (kind) |k| {
+        if (self.net_kinds.items[idx] != k)
+            return error.NetKindConflict;
     }
-    return entry.value_ptr.*;
+    return id;
 }
 
 pub fn getNetRef(self: *Netlist, key: NetKey) NetRef {
@@ -270,6 +364,10 @@ pub fn getNetKind(self: *Netlist, id: NetNameId) NetKind {
     return self.net_kinds.items[@intFromEnum(id)];
 }
 
+pub fn findNetKind(self: *Netlist, name: []const u8) ?NetKind {
+    return self.getNetKind(self.net_names.find(name) orelse return null);
+}
+
 pub fn getNet(self: *Netlist, ref: NetRef) *Net {
     return &self.nets.items[ref.netIdx()];
 }
@@ -278,19 +376,22 @@ pub fn getGlobalNet(self: *Netlist, ref: NetRef) *GlobalNet {
     return &self.global_nets.items[ref.globalIdx()];
 }
 
-pub fn getCellId(self: *Netlist, name: []const u8, t: ?CellType) error{UnknownCellType}!CellId {
-    const entry = self.cell_names.getOrPut(self.alloc, name) catch common.oom();
-    if (!entry.found_existing) {
-        if (t == null)
-            return error.UnknownCellType;
-        entry.key_ptr.* = self.str_arena.allocator().dupe(u8, name) catch common.oom();
-        entry.value_ptr.* = @enumFromInt(self.cells.items.len);
-        self.cells.append(self.alloc, Cell{
-            .name = entry.key_ptr.*,
-            .t = t.?,
-        }) catch common.oom();
+pub fn getCellId(
+    self: *Netlist,
+    name: []const u8,
+    t: ?CellType,
+) error{ UnknownCellType, CellTypeConflict }!CellId {
+    if (self.cell_names.find(name)) |id| {
+        if (t) |ct| if (!std.meta.eql(self.getCell(id).cellType(), ct))
+            return error.CellTypeConflict;
+        return id;
     }
-    return entry.value_ptr.*;
+
+    const ct = t orelse return error.UnknownCellType;
+    const id = self.cell_names.intern(self.alloc, self.str_arena.allocator(), name);
+    std.debug.assert(@intFromEnum(id) == self.cells.items.len);
+    self.cells.append(self.alloc, .init(ct)) catch common.oom();
+    return id;
 }
 
 pub fn getCell(self: *Netlist, id: CellId) *Cell {
@@ -299,10 +400,5 @@ pub fn getCell(self: *Netlist, id: CellId) *Cell {
 }
 
 pub fn getPackId(self: *Netlist, name: []const u8) PackId {
-    const entry = self.pack_names.getOrPut(self.alloc, name) catch common.oom();
-    if (!entry.found_existing) {
-        entry.key_ptr.* = self.str_arena.allocator().dupe(u8, name) catch common.oom();
-        entry.value_ptr.* = @enumFromInt(self.pack_names.count());
-    }
-    return entry.value_ptr.*;
+    return self.pack_names.intern(self.alloc, self.str_arena.allocator(), name);
 }

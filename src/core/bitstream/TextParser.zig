@@ -158,15 +158,15 @@ fn parseCommands(
 
                                 const x = try p.p.parseNumber(u3);
                                 bram_width = 16;
-                                @field(cfg.*, f.field) = x;
+                                @field(cfg.*, f.field) = @enumFromInt(x);
                             } else {
                                 const x = try p.p.parseNumber(u16);
-                                const width_val: u3 = switch (x) {
-                                    1 => 0,
-                                    2 => 1,
-                                    4 => 2,
-                                    8 => 3,
-                                    16 => 4,
+                                const width_val: common.BramWidth = switch (x) {
+                                    1 => .w1,
+                                    2 => .w2,
+                                    4 => .w4,
+                                    8 => .w8,
+                                    16 => .w16,
                                     else => try p.p.err("BRAM width can only be 1, 2, 4, 8 or 16, not {}", .{x}),
                                 };
                                 bram_width = x;

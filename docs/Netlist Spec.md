@@ -160,9 +160,7 @@ $mux, $decode,
 $and, $or, $not, $xor,
 $and_all, $or_all, $xor_all,
 $ff,
-$rom, $rom_dual, $ram, $ram_dual,
-$input, $output, $bidir,
-$blackbox
+$rom, $rom_dual, $ram, $ram_dual
 ```
 
 Commands for the cells are either parameter assignments, input/output assignements or memory data.
@@ -276,7 +274,8 @@ MEM: // Full logic tile configured as distributed RAM (single output)
     out DO: net?
 MEM_DUAL: // Full logic tile configured as distributed RAM (dual output)
     SITE: (u32, u32)? // placer
-    INIT[0..1]: u16
+    INIT0: u16
+    INIT1: u16
     in CLK: clock
     in RST: reset?
     in ADDR[0..3]: net
@@ -288,23 +287,23 @@ BRAM: // Full BRAM tile configured as single-port
     WIDTH: {1,2,4,8,16}
     data: data{}
     in CLK: clock
-    in ADDR[0..ADDR_WIDTH-1]: net // ADDR_WIDTH = log2(4096/WIDTH)
-    in DI[0..WIDTH-1]: net
+    in ADDR[0..11]: net? // only log2(4096/WIDTH) are actually used
+    in DI[0..15]: net? // only WIDTH are actually used
     in WE: net
-    out DO[0..WIDTH-1]: net?
+    out DO[0..15]: net? // only WIDTH are actually used
 BRAM_DUAL: // Full BRAM tile configured as dual-port
     SITE: (u32, u32)? // placer
     WIDTH: {1,2,4,8}
     data: data{}
     in CLK: clock
-    in ADDR1[0..ADDR_WIDTH-1]: net // ADDR_WIDTH = log2(4096/WIDTH)
-    in ADDR2[0..ADDR_WIDTH-1]: net
-    in DI1[0..WIDTH-1]: net
-    in DI2[0..WIDTH-1]: net
+    in ADDR1[0..11]: net? // only log2(4096/WIDTH) are actually used
+    in ADDR2[0..11]: net?
+    in DI1[0..7]: net? // only WIDTH are actually used
+    in DI2[0..7]: net?
     in WE1: net
     in WE2: net
-    out DO1[0..WIDTH-1]: net?
-    out DO2[0..WIDTH-1]: net?
+    out DO1[0..7]: net? // only WIDTH are actually used
+    out DO2[0..7]: net?
 DSP: // Full DSP tile configured as ACC=0
     SITE: (u32, u32)? // placer
     SIGNED_A: u1
@@ -551,60 +550,6 @@ $ram_dual:
     out DO1[0..DATA_WIDTH-1]: net?
     out DO2[0..DATA_WIDTH-1]: net?
 ```
-
-#### `$input`
-
-Represents a general IO bus, configured as input.
-```
-$input:
-    WIDTH: u16,
-    PIN[0..WIDTH-1]: u32?
-    PULLDOWN: u1? = 0
-    PULLUP: u1? = 0
-    in CLK: clock?
-    in RST: reset?
-    in IE: net? // REG_I = 1 if bound
-    out I[0..WIDTH-1]: net?
-```
-
-#### `$output`
-
-Represents a general IO bus, configured as output.
-```
-$output:
-    WIDTH: u16,
-    PIN[0..WIDTH-1]: u32?
-    in CLK: clock?
-    in RST: reset?
-    in O[0..WIDTH-1]: net
-    in E: net
-    in OE: net? // REG_O = 1 if bound
-    in EE: net? // Must be bound together with OE
-```
-
-#### `$bidir`
-
-Represents a general IO bus, configured as bidirectional input-output.
-```
-$bidir:
-    WIDTH: u16,
-    PIN[0..WIDTH-1]: u32?
-    PULLDOWN: u1? = 0
-    PULLUP: u1? = 0
-    in CLK: clock?
-    in RST: reset?
-    in O[0..WIDTH-1]: net?
-    in E: net?
-    in IE: net? // REG_I = 1 if bound
-    in OE: net? // REG_O = 1 if bound
-    in EE: net? // Must be bound together with OE
-    out I[0..WIDTH-1]: net?
-```
-
-#### `$blackbox`
-
-Some unknown cell with implementation-defined behavior. Cannot be placed/positioned/routed.
-Any parameters or inputs/outputs are supported.
 
 ### Packing rules
 
