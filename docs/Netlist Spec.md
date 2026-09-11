@@ -92,6 +92,7 @@ In fact, a net can have multiple indexes, allowing for multidimensional data:
 net bus[0..3][0..31];
 ```
 The indexes are still treated as part of the name.
+The order is considered to be row-major, with the rightmost index running the fastest.
 
 Special clock and reset nets have to be tagged explicitly:
 ```
@@ -205,7 +206,7 @@ All outputs are optional.
 All inputs can also be assigned to 0 or 1 constants, and buses can be assigned to constants:
 ```
 in WE1 = 1;
-in DI[0..3] = 0xF;
+in DI[0..3] = 1;
 ```
 
 ### Physical cells
@@ -386,8 +387,8 @@ Represents a multiplexer, selecting one of the inputs based on select signal.
 ```
 $mux:
     WIDTH: u16,
-    DEPTH: u8,
-    in IN[0..2^DEPTH-1][0..WIDTH-1]: net
+    DEPTH: u4,
+    in IN[0..WIDTH-1][0..2^DEPTH-1]: net
     in SEL[0..DEPTH-1]: net
     out OUT[0..WIDTH-1]: net?
 ```
@@ -398,7 +399,7 @@ Represents a decoder, sending 1 to one of its outputs based on select signal.
 All other outputs are set to 0.
 ```
 $decode:
-    DEPTH: u8,
+    DEPTH: u4,
     in SEL[0..DEPTH-1]: net
     out OUT[0..2^DEPTH-1]: net?
 ```
