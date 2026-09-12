@@ -30,13 +30,11 @@ inline fn nl(p: *NetlistParser) *Netlist {
     return p.netlist.?;
 }
 
-const passes: std.StaticStringMap(Netlist.Pass) = .initComptime(.{
-    .{ "synth", .synth },
-    .{ "opt", .opt },
-    .{ "techmap", .techmap },
-    .{ "pack", .pack },
-    .{ "place", .place },
-    .{ "route", .route },
+const passes: std.StaticStringMap(Netlist.Pass) = .initComptime(blk: {
+    var arr: [std.enums.values(Netlist.Pass).len]struct { []const u8, Netlist.Pass } = undefined;
+    for (std.enums.values(Netlist.Pass), &arr) |v, *kv|
+        kv.* = .{ @tagName(v), v };
+    break :blk arr;
 });
 
 const NetParam = struct {
@@ -88,7 +86,7 @@ fn parseHeader(p: *NetlistParser) !void {
     try p.p.expect(';');
 
     p.netlist = p.p.alloc.create(Netlist) catch common.oom();
-    p.netlist.?.init(p.p.alloc, model, design_str);
+    p.netlist.?.* = .init(p.p.alloc, model, design_str);
 
     while (!p.p.checkEof()) {
         const m = p.p.mark();
@@ -105,10 +103,7 @@ fn parseHeader(p: *NetlistParser) !void {
         const str = try p.p.parseString();
         try p.p.expect(';');
 
-        p.nl().passes.put(
-            pass,
-            p.nl().str_arena.allocator().dupe(u8, str) catch common.oom(),
-        );
+        p.nl().setPass(pass, str);
     }
 }
 
@@ -142,7 +137,7 @@ fn parseSignalRange(p: *NetlistParser) !SignalRange {
     const name = try p.parseName();
     var range: Indexes.Range = .empty;
     while (p.p.check('[')) {
-        if (range.len() >= Indexes.MAX_INDEXES)
+        if (range.n >= Indexes.MAX_INDEXES)
             try p.p.err(
                 "At most {}-dimensional wires are currently supported",
                 .{Indexes.MAX_INDEXES},
@@ -156,6 +151,9 @@ fn parseSignalRange(p: *NetlistParser) !SignalRange {
             break :blk try p.p.parseNumber(u16);
         } else start;
         try p.p.expect(']');
+
+        if (end < start)
+            try p.p.err("Reverse ranges are not supported: '{}..{}'", .{ start, end });
 
         range.addStartEnd(start, end);
     }
@@ -181,48 +179,43 @@ fn parseNet(p: *NetlistParser) !void {
             try p.p.err("Unknown net type: '{s}'", .{word});
     } else null;
 
-    const net_base_id = p.nl().internNetBaseId(signal.name);
+    const net_base_id = p.nl().net_base_names.intern(signal.name);
 
-    if (p.p.check(';')) {
-        // Just declaration
-        try p.p.expect(';');
-        // Multiple nets declared
+    const is_decl = p.p.check(';');
+
+    if (is_decl)
+        try p.p.expect(';')
+    else if (signal.indexes.count() != 1)
+        try p.p.err("Only one net can be defined per block, not {}", .{signal.indexes.count()});
+
+    // A bare `net a;` pins the kind to .net; a block leaves it open, so
+    // `net a : clock;` followed by `net a {}` stays legal.
+    const decl_kind: ?Netlist.Net.Kind = if (is_decl) kind orelse .net else kind;
+
+    // Declare all the nets first
+    {
         var iter = signal.indexes.iterator();
         while (iter.next()) |indexes| {
             _ = p.nl().defineNet(
                 net_base_id,
                 indexes,
-                kind orelse .net,
+                decl_kind,
             ) catch {
                 const existing_ref = p.nl().findNetRef(net_base_id, indexes).?;
                 const existing_net = p.nl().getNet(existing_ref);
                 try p.p.err(
                     "Net '{f}' was already defined earlier as '{s}', cannot redefine it as '{s}'",
-                    .{ signal, @tagName(existing_net.kind), @tagName(kind orelse .net) },
+                    .{ signal, @tagName(existing_net.kind), @tagName(decl_kind.?) },
                 );
             };
         }
-        return;
     }
 
+    if (is_decl)
+        return;
     // Not a declaration, full block
-    const net_count = signal.indexes.count();
-    if (net_count != 1)
-        try p.p.err("Only one net can be defined per block, not {}", .{net_count});
 
-    const net_ref = p.nl().defineNet(
-        net_base_id,
-        signal.indexes.base,
-        kind,
-    ) catch {
-        const existing_ref = p.nl().findNetRef(net_base_id, signal.indexes.base).?;
-        const existing_net = p.nl().getNet(existing_ref);
-        try p.p.err(
-            "Net '{f}' was already defined earlier as '{s}', cannot redefine it as '{s}'",
-            .{ signal, @tagName(existing_net.kind), @tagName(kind.?) },
-        );
-    };
-
+    const net_ref = p.nl().findNetRef(net_base_id, signal.indexes.base()).?;
     const net = p.nl().getNet(net_ref);
 
     try p.p.expect('{');
@@ -260,6 +253,8 @@ fn parseNet(p: *NetlistParser) !void {
 
 fn parseNetRoute(p: *NetlistParser, net: *Netlist.Net) !void {
     // 'route' already parsed
+    if (net.route_len != 0)
+        try p.p.err("You cannot redefine 'route' for a net", .{});
     net.route_start = @intCast(p.nl().route_edges.items.len);
     var count: u16 = 0;
 
@@ -279,7 +274,7 @@ fn parseNetRoute(p: *NetlistParser, net: *Netlist.Net) !void {
             const code = wire_codes.encodeSwitchSink(sink, source) orelse
                 try p.p.err("For switch sink {f}, source {f} is unencodable", .{ sink, source });
             p.nl().route_edges.append(
-                p.nl().alloc,
+                p.nl().gpa,
                 .{ .switchbox = .{
                     .at = sw,
                     .dst = sink,
@@ -307,7 +302,7 @@ fn parseNetRoute(p: *NetlistParser, net: *Netlist.Net) !void {
 
                     // RouteEdge names its tile variants after TileType, so the
                     // tag is the block keyword we just matched.
-                    p.nl().route_edges.append(p.nl().alloc, @unionInit(
+                    p.nl().route_edges.append(p.nl().gpa, @unionInit(
                         Netlist.RouteEdge,
                         @tagName(t),
                         .{ .at = tile, .input = in, .src = code },
@@ -362,27 +357,32 @@ const clk_rst_table: std.StaticStringMap(Netlist.Net.Kind) = .initComptime(.{
     .{ "RST", .reset },
 });
 
-fn parsePortCommand(
+fn handlePortCommand(
     p: *NetlistParser,
-    comptime entry: ports.CellEntry,
-    lookup_table: ports.LookupTable,
+    entry: ports.CellEntry,
+    lookup_table: *const ports.LookupTable,
     kind: Netlist.Cell.PortKind,
     port_signal: SignalRange,
     net_refs: []Netlist.Net.Ref,
     cell: *Netlist.Cell,
 ) !void {
-    std.debug.assert(port_signal.indexes.count() == net_refs.len);
-
-    if (entry.clk and kind == .in and clk_rst_table.get(port_signal.name) != null) {
+    if (kind == .in and clk_rst_table.get(port_signal.name) != null) {
         const net_kind = clk_rst_table.get(port_signal.name).?;
 
-        if (port_signal.indexes.len() != 0)
+        const should_have_clk_rst = if (net_kind == .clock) entry.clk else entry.rst;
+        if (!should_have_clk_rst)
+            try p.p.err(
+                "Cell type '{f}' doesn't have a {s} input",
+                .{ cell.cellType(), port_signal.name },
+            );
+
+        if (port_signal.indexes.n != 0)
             try p.p.err(
                 "Port {s} can't have indexes: '{f}'",
                 .{ port_signal.name, port_signal },
             );
         const net_ref = net_refs[0];
-        if (net_ref == .unbound or net_ref == .zero or net_ref == .one)
+        if (net_ref == .none or net_ref == .zero or net_ref == .one)
             try p.p.err(
                 "Port {s} cannot be {s}",
                 .{ port_signal.name, @tagName(net_ref) },
@@ -397,40 +397,85 @@ fn parsePortCommand(
 
         const target = if (net_kind == .clock) &cell.clk else &cell.rst;
 
-        if (target.* != .unbound and target.* != net_ref) {
-            const old_net = p.nl().getNet(net_ref);
+        if (target.* != .none and target.* != net_ref) {
             try p.p.err(
                 "Port {s} was earlier bound to {f}",
-                .{ port_signal.name, old_net.fmt(p.nl()) },
+                .{ port_signal.name, target.fmt(p.nl()) },
             );
         }
 
         target.* = net_ref;
     } else {
-        inline for (entry.entries, 0..) |e, e_idx| {
+        for (entry.entries, 0..) |e, e_idx| {
             if (e.kind == kind and std.mem.eql(u8, e.name, port_signal.name)) {
                 const lookup = lookup_table.ports[e_idx];
                 var port_iter = port_signal.indexes.iterator();
                 var pos: usize = 0;
                 while (port_iter.next()) |port_indexes| {
-                    const index = lookup.full_range.toIndex(port_indexes) orelse
-                        try p.p.err(
-                            "Port {s} only goes through {f}, {f} is not inside that",
-                            .{ port_signal.name, lookup.full_range, port_indexes },
-                        );
+                    const index = lookup.full_range.toIndex(port_indexes) orelse {
+                        if (port_indexes.n != lookup.full_range.n)
+                            try p.p.err(
+                                "Port {s} needs {} indexes, got {}",
+                                .{ port_signal.name, lookup.full_range.n, port_indexes.n },
+                            )
+                        else
+                            try p.p.err(
+                                "Port {s} only goes through {f}, {f} is not inside that",
+                                .{ port_signal.name, lookup.full_range, port_indexes },
+                            );
+                    };
                     const port = p.nl().getCellPort(cell, @intCast(lookup.base + index));
+                    if (port.* != .none and port.* != net_refs[pos]) {
+                        try p.p.err(
+                            "Port {s}{f} was earlier bound to {f}",
+                            .{ port_signal.name, port_indexes, port.fmt(p.nl()) },
+                        );
+                    }
                     port.* = net_refs[pos];
                     pos += 1;
                 }
+                return;
             }
         }
+        // Fall-through
+        try p.p.err("Unknown port: {s} {f}", .{ @tagName(kind), port_signal });
+    }
+}
+
+const SignalSource = union(enum) {
+    range: SignalRange,
+    zero: void,
+    one: void,
+
+    pub fn format(
+        self: @This(),
+        writer: *std.Io.Writer,
+    ) std.Io.Writer.Error!void {
+        switch (self) {
+            .range => |r| try writer.print("{f}", .{r}),
+            .zero => try writer.writeAll("0"),
+            .one => try writer.writeAll("1"),
+        }
+    }
+};
+
+fn parseSignalSource(p: *NetlistParser) !SignalSource {
+    p.p.skipWhitespace();
+    if (!p.p.eof() and std.ascii.isDigit(p.p.peek(0).?)) {
+        const x = try p.p.parseNumber(u1);
+        return switch (x) {
+            0 => .zero,
+            1 => .one,
+        };
+    } else {
+        return .{ .range = try p.parseSignalRange() };
     }
 }
 
 fn parseCommonCellCommand(
     p: *NetlistParser,
     cell: *Netlist.Cell,
-    lookup: ports.LookupTable,
+    lookup: *?ports.LookupTable,
 ) !bool {
     const m = p.p.mark();
     const word = try p.p.parseWord();
@@ -438,28 +483,43 @@ fn parseCommonCellCommand(
         const kind: Netlist.Cell.PortKind = if (std.mem.eql(u8, word, "in")) .in else .out;
         const port_signal = try p.parseSignalRange();
         try p.p.expect('=');
-        const external_signal = try p.parseSignalRange();
+        const external_signal = if (kind == .in)
+            try p.parseSignalSource()
+        else
+            SignalSource{ .range = try p.parseSignalRange() };
         try p.p.expect(';');
 
-        p.nl().allocateCellPorts(cell, lookup.total);
+        if (lookup.* == null)
+            lookup.* = try p.getPortsLookupTable(cell);
+        p.nl().allocateCellPorts(cell, lookup.*.?.total);
 
         const port_count = port_signal.indexes.count();
-        const external_count = external_signal.indexes.count();
+        const external_count = switch (external_signal) {
+            .range => |r| r.indexes.count(),
+            .zero, .one => 1,
+        };
 
-        const net_base_id = p.nl().findNetBaseId(external_signal.name) orelse
-            try p.p.err("Couldn't find net {f}", .{external_signal});
+        const net_base_id = switch (external_signal) {
+            .range => |r| p.nl().net_base_names.find(r.name) orelse
+                try p.p.err("Couldn't find net {f}", .{r}),
+            .zero, .one => null,
+        };
 
         var net_refs = p.arena.allocator().alloc(Netlist.Net.Ref, port_count) catch common.oom();
         if (external_count == 1) {
-            const net_ref = p.nl().findNetRef(net_base_id, external_signal.indexes.base) orelse
-                try p.p.err("Couldn't find net {f}", .{external_signal});
+            const net_ref: Netlist.Net.Ref = switch (external_signal) {
+                .range => |r| p.nl().findNetRef(net_base_id.?, r.indexes.base()) orelse
+                    try p.p.err("Couldn't find net {f}", .{external_signal}),
+                .zero => .zero,
+                .one => .one,
+            };
             @memset(net_refs, net_ref);
         } else if (external_count == port_count) {
             var i: usize = 0;
-            var iter_external = external_signal.indexes.iterator();
+            var iter_external = external_signal.range.indexes.iterator();
             while (iter_external.next()) |indexes| {
-                net_refs[i] = p.nl().findNetRef(net_base_id, indexes) orelse
-                    try p.p.err("Couldn't find net {s}{f}", .{ external_signal.name, indexes });
+                net_refs[i] = p.nl().findNetRef(net_base_id.?, indexes) orelse
+                    try p.p.err("Couldn't find net {s}{f}", .{ external_signal.range.name, indexes });
                 i += 1;
             }
         } else try p.p.err("Counts of {f} and {f} don't match: {} != {}", .{
@@ -469,28 +529,22 @@ fn parseCommonCellCommand(
             external_count,
         });
 
-        switch (cell.cellType()) {
-            inline else => |ct| switch (ct) {
-                inline else => |cct| {
-                    try p.parsePortCommand(
-                        ports.cellEntry(cct),
-                        lookup,
-                        kind,
-                        port_signal,
-                        net_refs,
-                        cell,
-                    );
-                },
-            },
-        }
+        try p.handlePortCommand(
+            ports.cellEntry(cell.cellType()),
+            &lookup.*.?,
+            kind,
+            port_signal,
+            net_refs,
+            cell,
+        );
     } else if (std.mem.eql(u8, word, "PACK")) {
         try p.p.expect('=');
         const pack_word = try p.parseName();
-        cell.pack = p.nl().internPackId(pack_word);
+        cell.pack = p.nl().pack_names.intern(pack_word);
         try p.p.expect(';');
     } else if (std.mem.eql(u8, word, "SLOT")) {
         try p.p.expect('=');
-        const slot_word = try p.parseName();
+        const slot_word = try p.p.parseWord();
         cell.slot = if (slots_table.get(slot_word)) |s|
             s
         else
@@ -548,12 +602,12 @@ fn getPortsLookupTable(p: *NetlistParser, cell: *const Netlist.Cell) !ports.Look
 }
 
 fn parseCellBody(p: *NetlistParser, cell: *Netlist.Cell) !void {
-    const lookup = try p.getPortsLookupTable(cell);
+    var lookup: ?ports.LookupTable = null;
 
     try p.p.expect('{');
     outer: while (!p.p.checkEof() and !p.p.check('}')) {
         _ = p.arena.reset(.retain_capacity);
-        if (try p.parseCommonCellCommand(cell, lookup)) continue;
+        if (try p.parseCommonCellCommand(cell, &lookup)) continue;
 
         const param_name = try p.p.parseWord();
         switch (cell.params) {
@@ -563,8 +617,11 @@ fn parseCellBody(p: *NetlistParser, cell: *Netlist.Cell) !void {
                         if (std.mem.eql(u8, param_name, comptime common.upper(f.name))) {
                             try p.p.expect('=');
                             const V = @typeInfo(f.type).optional.child;
-                            @field(params.*, f.name) =
-                                try p.parseParamValue(V);
+                            const new_val = try p.parseParamValue(V);
+                            const old_val = @field(params.*, f.name);
+                            if (old_val != null and old_val != new_val)
+                                try p.p.err("Trying to redefine '{s}'", .{f.name});
+                            @field(params.*, f.name) = new_val;
                             try p.p.expect(';');
                             continue :outer;
                         }
@@ -603,7 +660,7 @@ fn parseCell(p: *NetlistParser) !void {
         }
     } else null;
 
-    const cell_id = p.nl().getCellRef(name, new_t) catch |e| switch (e) {
+    const cell_id = p.nl().internCellRef(name, new_t) catch |e| switch (e) {
         error.UnknownCellType => try p.p.err("Cell type for '{s}' was not specified", .{name}),
         error.CellTypeConflict => try p.p.err(
             "Cell '{s}' redeclared with a different type '{f}'",
@@ -630,6 +687,7 @@ pub const Result = struct {
 
 pub fn parse(input: []const u8, alloc: std.mem.Allocator) Result {
     var p = NetlistParser.init(input, alloc);
+    defer p.deinit();
     // parseHeader can fail either side of creating the Netlist, so the
     // optional is passed through rather than unwrapped.
     p.parseHeader() catch return Result{

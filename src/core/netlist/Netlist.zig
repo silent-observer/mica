@@ -6,14 +6,13 @@ const Indexes = @import("Indexes.zig");
 
 const Netlist = @This();
 
-alloc: std.mem.Allocator,
-str_arena: std.heap.ArenaAllocator,
+gpa: std.mem.Allocator,
 model: DeviceModel,
 design_name: []const u8,
 passes: std.EnumMap(Pass, []const u8),
 
 cells: std.ArrayList(Cell),
-ports: std.ArrayList(Net.Ref),
+port_nets: std.ArrayList(Net.Ref),
 
 nets: std.ArrayList(Net),
 route_edges: std.ArrayList(RouteEdge),
@@ -24,46 +23,61 @@ pack_names: Interner(PackId),
 
 net_refs: std.AutoHashMapUnmanaged(struct { Net.BaseId, Indexes }, Net.Ref),
 
-pub const Pass = enum { synth, opt, techmap, pack, place, route };
-
 pub fn init(
-    self: *Netlist,
-    alloc: std.mem.Allocator,
+    gpa: std.mem.Allocator,
     model: DeviceModel,
     design_name: []const u8,
-) void {
-    self.* = Netlist{
-        .alloc = alloc,
-        .str_arena = .init(alloc),
+) Netlist {
+    return Netlist{
+        .gpa = gpa,
 
         .model = model,
-        .design_name = "",
+        .design_name = gpa.dupe(u8, design_name) catch common.oom(),
         .passes = .init(.{}),
 
         .cells = .empty,
-        .ports = .empty,
+        .port_nets = .empty,
 
         .nets = .empty,
         .route_edges = .empty,
 
-        .cell_names = .empty,
-        .net_base_names = .empty,
+        .cell_names = .init(gpa),
+        .net_base_names = .init(gpa),
+        .pack_names = .init(gpa),
         .net_refs = .empty,
-        .pack_names = .empty,
     };
-    self.design_name = self.str_arena.allocator().dupe(u8, design_name) catch common.oom();
 }
 
 pub fn deinit(self: *Netlist) void {
-    self.str_arena.deinit();
-    self.cells.deinit(self.alloc);
-    self.ports.deinit(self.alloc);
-    self.nets.deinit(self.alloc);
-    self.route_edges.deinit(self.alloc);
-    self.cell_names.deinit(self.alloc);
-    self.net_base_names.deinit(self.alloc);
-    self.net_refs.deinit(self.alloc);
-    self.pack_names.deinit(self.alloc);
+    self.gpa.free(self.design_name);
+    {
+        var iter = self.passes.iterator();
+        while (iter.next()) |e| {
+            self.gpa.free(e.value.*);
+        }
+    }
+    self.cells.deinit(self.gpa);
+    self.port_nets.deinit(self.gpa);
+    self.nets.deinit(self.gpa);
+    self.route_edges.deinit(self.gpa);
+    self.cell_names.deinit();
+    self.net_base_names.deinit();
+    self.pack_names.deinit();
+    self.net_refs.deinit(self.gpa);
+}
+
+pub const Pass = enum { synth, opt, techmap, pack, place, route };
+pub fn setPass(self: *Netlist, pass: Pass, text: []const u8) void {
+    const new_text = if (self.passes.get(pass)) |old_text| blk: {
+        const r = std.mem.concat(
+            self.gpa,
+            u8,
+            &.{ old_text, "\n", text },
+        ) catch common.oom();
+        self.gpa.free(old_text);
+        break :blk r;
+    } else self.gpa.dupe(u8, text) catch common.oom();
+    self.passes.put(pass, new_text);
 }
 
 pub const RouteEdge = union(enum) {
@@ -97,10 +111,19 @@ pub const Net = struct {
 
     pub const BaseId = enum(u32) { _ };
     pub const Ref = enum(u32) {
-        unbound = 0xFFFF_FFFF,
+        none = 0xFFFF_FFFF,
         zero = 0xFFFF_FFFE,
         one = 0xFFFF_FFFD,
         _, // A net index
+
+        pub fn fmt(ref: Ref, netlist: *const Netlist) Printable {
+            return switch (ref) {
+                .none => Printable{ .name = "<none>", .indexes = .empty },
+                .zero => Printable{ .name = "0", .indexes = .empty },
+                .one => Printable{ .name = "1", .indexes = .empty },
+                else => netlist.getNet(ref).fmt(netlist),
+            };
+        }
     };
 
     pub const Printable = struct {
@@ -123,26 +146,17 @@ pub const Net = struct {
     }
 };
 
-pub fn findNetBaseId(self: *const Netlist, name: []const u8) ?Net.BaseId {
-    return self.net_base_names.find(name);
-}
-pub fn internNetBaseId(self: *Netlist, name: []const u8) Net.BaseId {
-    return self.net_base_names.intern(self.alloc, self.str_arena.allocator(), name);
-}
-
 pub const PackId = enum(u32) { none = 0xFFFF_FFFF, _ };
-pub fn internPackId(self: *Netlist, name: []const u8) PackId {
-    return self.pack_names.intern(self.alloc, self.str_arena.allocator(), name);
-}
 
-pub fn getNet(self: *Netlist, ref: Net.Ref) *Net {
-    std.debug.assert(ref != .unbound and ref != .zero and ref != .one);
+pub fn getNet(self: *const Netlist, ref: Net.Ref) *Net {
+    std.debug.assert(ref != .none and ref != .zero and ref != .one);
     return &self.nets.items[@intFromEnum(ref)];
 }
 
-pub fn findNetRef(self: *Netlist, name_id: Net.BaseId, indexes: Indexes) ?Net.Ref {
+pub fn findNetRef(self: *const Netlist, name_id: Net.BaseId, indexes: Indexes) ?Net.Ref {
     return self.net_refs.get(.{ name_id, indexes });
 }
+
 pub fn defineNet(
     self: *Netlist,
     name_id: Net.BaseId,
@@ -150,13 +164,13 @@ pub fn defineNet(
     kind: ?Net.Kind,
 ) error{NetKindConflict}!Net.Ref {
     const entry = self.net_refs.getOrPut(
-        self.alloc,
+        self.gpa,
         .{ name_id, indexes },
     ) catch common.oom();
 
     if (!entry.found_existing) {
         entry.value_ptr.* = @enumFromInt(self.nets.items.len);
-        self.nets.append(self.alloc, Net{
+        self.nets.append(self.gpa, Net{
             .name = name_id,
             .indexes = indexes,
             .kind = kind orelse .net,
@@ -278,8 +292,8 @@ pub const Cell = struct {
     },
     ports_start: u32 = 0,
     ports_len: u16 = 0,
-    clk: Net.Ref = .unbound,
-    rst: Net.Ref = .unbound,
+    clk: Net.Ref = .none,
+    rst: Net.Ref = .none,
     pack: PackId = .none,
     slot: SlotId = .none,
     site: ?common.TileCoords = null,
@@ -335,7 +349,7 @@ pub const Cell = struct {
     }
 };
 
-pub fn getCellRef(
+pub fn internCellRef(
     self: *Netlist,
     name: []const u8,
     t: ?CellType,
@@ -347,13 +361,13 @@ pub fn getCellRef(
     }
 
     const ct = t orelse return error.UnknownCellType;
-    const ref = self.cell_names.intern(self.alloc, self.str_arena.allocator(), name);
+    const ref = self.cell_names.intern(name);
     std.debug.assert(@intFromEnum(ref) == self.cells.items.len);
-    self.cells.append(self.alloc, .init(ct)) catch common.oom();
+    self.cells.append(self.gpa, .init(ct)) catch common.oom();
     return ref;
 }
 
-pub fn getCell(self: *Netlist, id: Cell.Ref) *Cell {
+pub fn getCell(self: *const Netlist, id: Cell.Ref) *Cell {
     std.debug.assert(id != .none);
     return &self.cells.items[@intFromEnum(id)];
 }
@@ -362,11 +376,11 @@ pub fn allocateCellPorts(self: *Netlist, cell: *Cell, count: usize) void {
     if (cell.ports_len != 0) return;
 
     cell.ports_len = @intCast(count);
-    cell.ports_start = @intCast(self.ports.items.len);
-    self.ports.appendNTimes(self.alloc, .unbound, count) catch common.oom();
+    cell.ports_start = @intCast(self.port_nets.items.len);
+    self.port_nets.appendNTimes(self.gpa, .none, count) catch common.oom();
 }
 
-pub fn getCellPort(self: *Netlist, cell: *const Cell, index: u32) *Net.Ref {
+pub fn getCellPort(self: *const Netlist, cell: *const Cell, index: u32) *Net.Ref {
     std.debug.assert(index < cell.ports_len);
-    return &self.ports.items[cell.ports_start + index];
+    return &self.port_nets.items[cell.ports_start + index];
 }

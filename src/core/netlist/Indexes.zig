@@ -4,26 +4,16 @@ const Indexes = @This();
 
 pub const MAX_INDEXES = 4;
 
-idx: [MAX_INDEXES]u16,
-len: u8,
+dims: [MAX_INDEXES]u16,
+n: u8,
 
 pub const empty = Indexes{
-    .idx = std.mem.zeroes([MAX_INDEXES]u16),
-    .len = 0,
+    .dims = std.mem.zeroes([MAX_INDEXES]u16),
+    .n = 0,
 };
 
-pub inline fn add(self: *Indexes, i: u16) void {
-    std.debug.assert(self.len < MAX_INDEXES);
-    self.idx[self.len] = i;
-    self.len += 1;
-}
-
-pub inline fn sliceMut(self: *Indexes) []u16 {
-    return self.idx[0..self.len];
-}
-
 pub inline fn slice(self: *const Indexes) []const u16 {
-    return self.idx[0..self.len];
+    return self.dims[0..self.n];
 }
 
 pub fn format(
@@ -35,69 +25,61 @@ pub fn format(
 }
 
 pub const Range = struct {
-    lens: [MAX_INDEXES]u16,
-    base: Indexes,
+    dims: [MAX_INDEXES]Dim,
+    n: u8,
+
+    const Dim = struct { start: u16, len: u16 };
 
     pub const empty = Range{
-        .lens = std.mem.zeroes([MAX_INDEXES]u16),
-        .base = .empty,
+        .dims = std.mem.zeroes([MAX_INDEXES]Dim),
+        .n = 0,
     };
 
-    pub inline fn len(self: Range) u16 {
-        return self.base.len;
+    pub inline fn base(self: Range) Indexes {
+        var dims: [MAX_INDEXES]u16 = undefined;
+        for (0..MAX_INDEXES) |i|
+            dims[i] = self.dims[i].start;
+        return .{ .dims = dims, .n = self.n };
     }
 
-    pub inline fn add(self: *Range, start: u16, length: u16) void {
-        std.debug.assert(self.base.len < MAX_INDEXES);
-        self.base.idx[self.base.len] = start;
-        self.lens[self.base.len] = length;
-        self.base.len += 1;
+    pub inline fn add(self: *Range, start: u16, len: u16) void {
+        std.debug.assert(self.n < MAX_INDEXES);
+        self.dims[self.n] = .{ .start = start, .len = len };
+        self.n += 1;
     }
 
     pub inline fn addStartEnd(self: *Range, start: u16, end: u16) void {
+        std.debug.assert(start <= end);
         self.add(start, end - start + 1);
     }
 
-    pub inline fn make1(a: [2]u16) Range {
-        var r: Range = .empty;
-        r.addStartEnd(a[0], a[1]);
-        return r;
-    }
-
-    pub inline fn make2(a: [2]u16, b: [2]u16) Range {
-        var r: Range = .empty;
-        r.addStartEnd(a[0], a[1]);
-        r.addStartEnd(b[0], b[1]);
-        return r;
-    }
-
-    pub inline fn lensSlice(self: *const Range) []const u16 {
-        return self.lens[0..self.base.len];
+    pub inline fn slice(self: *const Range) []const Dim {
+        return self.dims[0..self.n];
     }
 
     pub fn format(
         self: @This(),
         writer: *std.Io.Writer,
     ) std.Io.Writer.Error!void {
-        for (self.base.slice(), self.lensSlice()) |start, length| {
-            if (length <= 1)
-                try writer.print("[{}]", .{start})
+        for (self.slice()) |dim| {
+            if (dim.len <= 1)
+                try writer.print("[{}]", .{dim.start})
             else {
-                const end = start + length - 1;
-                try writer.print("[{}..{}]", .{ start, end });
+                const end = dim.start + dim.len - 1;
+                try writer.print("[{}..{}]", .{ dim.start, end });
             }
         }
     }
 
     pub fn count(self: Range) usize {
         var r: usize = 1;
-        for (self.lensSlice()) |length|
-            r *= length;
+        for (self.slice()) |dim|
+            r *= dim.len;
         return r;
     }
 
     pub inline fn iterator(self: Range) Iterator {
-        return .{ .r = self, .curr = self.base };
+        return .{ .r = self, .curr = self.base() };
     }
 
     pub const Iterator = struct {
@@ -107,14 +89,14 @@ pub const Range = struct {
         pub fn next(iter: *Iterator) ?Indexes {
             if (iter.curr) |*curr| {
                 const r = curr.*;
-                var i = curr.len;
+                var i = curr.n;
                 while (i > 0) {
                     i -= 1;
-                    curr.idx[i] += 1;
-                    if (curr.idx[i] < iter.r.base.idx[i] + iter.r.lens[i])
+                    curr.dims[i] += 1;
+                    if (curr.dims[i] < iter.r.dims[i].start + iter.r.dims[i].len)
                         return r;
 
-                    curr.idx[i] = iter.r.base.idx[i];
+                    curr.dims[i] = iter.r.dims[i].start;
                 }
                 iter.curr = null;
                 return r;
@@ -123,16 +105,16 @@ pub const Range = struct {
     };
 
     pub fn toIndex(haystack: Range, needle: Indexes) ?usize {
-        std.debug.assert(haystack.len() == needle.len);
+        if (haystack.n != needle.n) return null;
         var stride: usize = 1;
         var idx: usize = 0;
-        var i = haystack.len();
+        var i = haystack.n;
         while (i > 0) {
             i -= 1;
-            if (needle.idx[i] < haystack.base.idx[i]) return null;
-            if (needle.idx[i] >= haystack.base.idx[i] + haystack.lens[i]) return null;
-            idx += stride * (needle.idx[i] - haystack.base.idx[i]);
-            stride *= haystack.lens[i];
+            if (needle.dims[i] < haystack.dims[i].start) return null;
+            if (needle.dims[i] >= haystack.dims[i].start + haystack.dims[i].len) return null;
+            idx += stride * (needle.dims[i] - haystack.dims[i].start);
+            stride *= haystack.dims[i].len;
         }
         return idx;
     }

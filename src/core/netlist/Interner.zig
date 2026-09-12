@@ -5,17 +5,22 @@ pub fn Interner(comptime Id: type) type {
     return struct {
         const Self = @This();
 
+        arena: std.heap.ArenaAllocator,
         strings: std.ArrayListUnmanaged([]const u8),
         map: std.StringHashMapUnmanaged(Id),
 
-        pub const empty = Self{
-            .strings = .empty,
-            .map = .empty,
-        };
+        pub fn init(gpa: std.mem.Allocator) Self {
+            return Self{
+                .arena = .init(gpa),
+                .strings = .empty,
+                .map = .empty,
+            };
+        }
 
-        pub fn deinit(s: *Self, gpa: std.mem.Allocator) void {
-            s.strings.deinit(gpa);
-            s.map.deinit(gpa);
+        pub fn deinit(s: *Self) void {
+            s.strings.deinit(s.arena.child_allocator);
+            s.map.deinit(s.arena.child_allocator);
+            s.arena.deinit();
         }
 
         /// The id `str` was interned under, or null if it never was. Unlike
@@ -24,18 +29,13 @@ pub fn Interner(comptime Id: type) type {
             return s.map.get(str);
         }
 
-        pub fn intern(
-            s: *Self,
-            gpa: std.mem.Allocator,
-            bytes: std.mem.Allocator,
-            str: []const u8,
-        ) Id {
-            const e = s.map.getOrPut(gpa, str) catch oom();
+        pub fn intern(s: *Self, str: []const u8) Id {
+            const e = s.map.getOrPut(s.arena.child_allocator, str) catch oom();
             if (!e.found_existing) {
-                const owned = bytes.dupe(u8, str) catch oom();
+                const owned = s.arena.allocator().dupe(u8, str) catch oom();
                 e.key_ptr.* = owned;
                 e.value_ptr.* = @enumFromInt(s.strings.items.len);
-                s.strings.append(gpa, owned) catch oom();
+                s.strings.append(s.arena.child_allocator, owned) catch oom();
             }
             return e.value_ptr.*;
         }

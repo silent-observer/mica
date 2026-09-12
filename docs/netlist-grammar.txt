@@ -12,7 +12,7 @@ Number = DecNumber | BinNumber | HexNumber
 Bit = DecNumber(1)
 RawHexNumber = /[0-9A-Fa-f_]+/
 
-Name = /[A-Za-z_][A-Za-z0-9_/]*/
+Name = /[A-Za-z][A-Za-z0-9_/]*/
 
 Side = 'N' | 'E' | 'S' | 'W'
 Direction = 'U' | 'R' | 'D' | 'L'
@@ -53,7 +53,7 @@ NetType = 'clock' | 'reset'
 
 Net = 'net' SignalName (':' NetType)? '{' NetCommand* '}'
 
-Signal = SignalName | Number(?)
+Signal = SignalName | Bit
 SignalName = Name Index*
 Index =
   '[' Number(?) ']'
