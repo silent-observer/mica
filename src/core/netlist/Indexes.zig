@@ -104,6 +104,8 @@ pub const Range = struct {
         }
     };
 
+    /// Flat position of `needle` inside `haystack`, last index varying
+    /// fastest, or null if the dimensions differ or it falls outside.
     pub fn toIndex(haystack: Range, needle: Indexes) ?usize {
         if (haystack.n != needle.n) return null;
         var stride: usize = 1;

@@ -31,6 +31,9 @@ fn parseParamValue(p: *NetlistParser, comptime V: type) !V {
     };
 }
 
+/// Physical cells have fixed widths, so their table is comptime-known.
+/// Logical widths come from the cell's parameters, which must therefore be
+/// stated before its first port.
 fn getPortsLookupTable(p: *NetlistParser, cell_ref: Cell.Ref) !ports.LookupTable {
     return switch (p.nl().getCell(cell_ref).params) {
         .physical => |params_union| switch (std.meta.activeTag(params_union)) {
@@ -178,6 +181,7 @@ fn parseCellBody(p: *NetlistParser, cell_ref: Cell.Ref) !void {
 
     try p.p.expect('{');
     outer: while (!p.p.checkEof() and !p.p.check('}')) {
+        // The arena is scratch for one command; nothing may outlive the loop body.
         _ = p.arena.reset(.retain_capacity);
         if (try parseCommonCellCommand(p, cell_ref, &lookup)) continue;
 

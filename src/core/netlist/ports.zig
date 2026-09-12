@@ -21,6 +21,7 @@ pub const Entry = struct {
     name: []const u8,
     width: []const Dim = &.{},
 
+    /// Fails if the port's width names a cell parameter that is still unset.
     pub fn range(
         comptime e: Entry,
         p: anytype,
@@ -60,6 +61,8 @@ const MAX_PORT_ENTRIES = blk: {
     break :blk curr;
 };
 
+/// Flat port offsets for one cell, mapping each port's indexes to a position
+/// in the cell's `port_nets` span.
 pub const LookupTable = struct {
     total: u16,
     ports: [MAX_PORT_ENTRIES]PerPort, // Same order as in CellEntry entries

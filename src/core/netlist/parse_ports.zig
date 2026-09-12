@@ -12,6 +12,8 @@ const clk_rst_table: std.StaticStringMap(Net.Kind) = .initComptime(.{
     .{ "RST", .reset },
 });
 
+/// Binds `Cell.clk`/`Cell.rst`, which live outside the port table and so
+/// take no indexes and reject constant drivers.
 fn handleClkRstPort(
     p: *NetlistParser,
     net_kind: Net.Kind,
@@ -105,6 +107,8 @@ fn handleGeneralPort(
     try p.p.err("Unknown port: {s} {f}", .{ @tagName(kind), port_signal });
 }
 
+/// `net_refs` holds one ref per port bit, already broadcast or zipped against
+/// the port's indexes by the caller.
 pub fn handlePortCommand(
     p: *NetlistParser,
     lookup_table: *const ports.LookupTable,

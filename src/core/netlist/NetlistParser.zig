@@ -77,6 +77,8 @@ fn parseBlock(p: *NetlistParser) !void {
         try p.p.err("Unknown block '{s}'", .{block});
 }
 
+/// There is no `warnings` field: the netlist format defines no recoverable
+/// malformation, so every problem is fatal.
 pub const Result = struct {
     netlist: ?*Netlist,
     err: ?[]const u8,

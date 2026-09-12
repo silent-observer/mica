@@ -9,8 +9,11 @@ params: union(cell_type.Kind) {
     physical: cell_type.Physical.ParamsUnion,
     logical: cell_type.Logical.ParamsUnion,
 },
+/// Span of `netlist.port_nets`, one entry per port bit in the order
+/// `ports.LookupTable` assigns.
 ports_start: u32 = 0,
 ports_len: u16 = 0,
+/// CLK and RST are not in the port table; they bind here instead.
 clk: Net.Ref = .none,
 rst: Net.Ref = .none,
 pack: PackId = .none,

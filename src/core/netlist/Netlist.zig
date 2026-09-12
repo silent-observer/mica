@@ -93,11 +93,15 @@ pub fn findNetRef(self: *const Netlist, name_id: Net.BaseId, indexes: Indexes) ?
     return self.net_refs.get(.{ name_id, indexes });
 }
 
+/// Asserts `ref` names a real net; use `Net.Ref.fmt` for a ref that may still
+/// be a sentinel.
 pub fn getNet(self: *const Netlist, ref: Net.Ref) *Net {
     std.debug.assert(ref != .none and ref != .zero and ref != .one);
     return &self.nets.items[@intFromEnum(ref)];
 }
 
+/// Returns the existing ref if the net is already defined. A `kind` may be
+/// restated as long as it agrees; contradicting it is an error.
 pub fn defineNet(
     self: *Netlist,
     name_id: Net.BaseId,
@@ -127,6 +131,8 @@ pub fn defineNet(
 
 // Cells
 
+/// Cell names are interned in `cells` order, so an interned id *is* the
+/// `Cell.Ref`. `t` may be omitted only once the cell already exists.
 pub fn internCellRef(
     self: *Netlist,
     name: []const u8,
@@ -152,6 +158,8 @@ pub fn getCell(self: *const Netlist, id: Cell.Ref) *Cell {
 
 // Cell ports
 
+/// No-op once the span exists: `ports_len` is frozen by the first `in`/`out`
+/// binding, so a parameter changing afterwards cannot resize it.
 pub fn allocateCellPorts(self: *Netlist, cell_ref: Cell.Ref, count: usize) void {
     const cell = self.getCell(cell_ref);
     if (cell.ports_len != 0) return;

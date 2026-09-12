@@ -348,6 +348,7 @@ const and_or_xor_all = CellEntry{ .entries = &.{
     .{ .kind = .out, .name = "OUT" },
 } };
 
+/// CellEntry for the $rom/$ram family
 fn memoryEntry(comptime dual: bool, comptime writable: bool) CellEntry {
     const suffixes: []const []const u8 = if (dual) &.{ "1", "2" } else &.{""};
     const max_entries = 8;

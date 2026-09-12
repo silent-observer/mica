@@ -185,7 +185,7 @@ fn parseNetRoute(p: *NetlistParser, net_ref: Net.Ref) !void {
                     const cxt = p.nl().model.inputCxt(t, tile);
                     const in, const code = try p.p.parseInputCommand(t, cxt);
 
-                    // RouteEdge names its tile variants after TileType, so the
+                    // route.Edge names its tile variants after TileType, so the
                     // tag is the block keyword we just matched.
                     p.nl().route_edges.append(p.nl().gpa, @unionInit(
                         route.Edge,
