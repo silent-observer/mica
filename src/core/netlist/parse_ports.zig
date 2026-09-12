@@ -77,7 +77,7 @@ fn handleGeneralPort(
             const lookup = lookup_table.ports[e_idx];
             var port_iter = port_signal.indexes.iterator();
             var pos: usize = 0;
-            while (port_iter.next()) |port_indexes| {
+            while (port_iter.next()) |port_indexes| : (pos += 1) {
                 const index = lookup.full_range.toIndex(port_indexes) orelse {
                     if (port_indexes.n != lookup.full_range.n)
                         try p.p.err(
@@ -98,7 +98,6 @@ fn handleGeneralPort(
                     );
                 }
                 port.* = net_refs[pos];
-                pos += 1;
             }
             return;
         }

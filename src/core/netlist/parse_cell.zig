@@ -108,10 +108,9 @@ fn parseCommonCellCommand(
         } else if (external_count == port_count) {
             var i: usize = 0;
             var iter_external = external_signal.range.indexes.iterator();
-            while (iter_external.next()) |indexes| {
+            while (iter_external.next()) |indexes| : (i += 1) {
                 net_refs[i] = p.nl().findNetRef(net_base_id.?, indexes) orelse
                     try p.p.err("Couldn't find net {s}{f}", .{ external_signal.range.name, indexes });
-                i += 1;
             }
         } else try p.p.err("Counts of {f} and {f} don't match: {} != {}", .{
             port_signal,
@@ -183,6 +182,7 @@ fn parseCellBody(p: *NetlistParser, cell_ref: Cell.Ref) !void {
     outer: while (!p.p.checkEof() and !p.p.check('}')) {
         // The arena is scratch for one command; nothing may outlive the loop body.
         _ = p.arena.reset(.retain_capacity);
+        if (try p.checkMetadata(.{ .cell = cell_ref })) continue;
         if (try parseCommonCellCommand(p, cell_ref, &lookup)) continue;
 
         const cell = p.nl().getCell(cell_ref);

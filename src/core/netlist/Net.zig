@@ -1,6 +1,7 @@
 const std = @import("std");
 const Indexes = @import("Indexes.zig");
 const Netlist = @import("Netlist.zig");
+const Meta = @import("Meta.zig");
 
 pub const Net = @This();
 
@@ -15,6 +16,7 @@ period_ps: ?u32 = null,
 /// number where the bitstream writes `CLK0`/`RST0`.
 network: ?u3 = null,
 pin: ?u16 = null,
+meta: Meta.List = .{},
 
 pub const Kind = enum { net, clock, reset };
 

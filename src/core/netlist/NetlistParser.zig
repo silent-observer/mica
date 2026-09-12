@@ -6,6 +6,7 @@ const CommonParser = @import("../CommonParser.zig");
 
 const parseNet = @import("parse_net.zig").parseNet;
 const parseCell = @import("parse_cell.zig").parseCell;
+pub const checkMetadata = @import("parse_meta.zig").checkMetadata;
 
 const NetlistParser = @This();
 
@@ -50,6 +51,7 @@ fn parseHeader(p: *NetlistParser) !void {
 
     while (!p.p.checkEof()) {
         const m = p.p.mark();
+        if (try p.checkMetadata(.file)) continue;
         if (!std.mem.eql(u8, try p.p.parseWord(), "pass")) {
             p.p.reset(m);
             break;
@@ -68,6 +70,8 @@ fn parseHeader(p: *NetlistParser) !void {
 }
 
 fn parseBlock(p: *NetlistParser) !void {
+    if (try p.checkMetadata(.file)) return;
+
     const block = try p.p.parseWord();
     if (std.mem.eql(u8, block, "net"))
         try p.parseNet()

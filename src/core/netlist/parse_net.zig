@@ -104,6 +104,8 @@ pub fn parseNet(p: *NetlistParser) !void {
 
     try p.p.expect('{');
     while (!p.p.checkEof() and !p.p.check('}')) {
+        if (try p.checkMetadata(.{ .net = net_ref })) continue;
+
         const word = try p.p.parseWord();
         if (std.mem.eql(u8, word, "route")) { // Net route
             if (net.kind != .net)

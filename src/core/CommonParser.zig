@@ -58,9 +58,8 @@ pub fn skipWhitespace(p: *CommonParser) void {
             ' ', '\t', '\r', '\n' => p.pos += 1,
             '/' => if (p.peek(1) == '/') { // Comment
                 p.pos += 2;
-                while (p.peek(0)) |c2| {
+                while (p.peek(0)) |c2| : (p.pos += 1) {
                     if (c2 == '\n') break;
-                    p.pos += 1;
                 }
             } else return,
             else => return,
@@ -96,7 +95,7 @@ pub fn parseWordExtra(p: *CommonParser, comptime extra: []const u8) ![]const u8 
     if (!std.ascii.isAlphabetic(p.peek(0).?))
         try p.err("Expected a word, but got '{c}'", .{p.peek(0).?});
     const start = p.pos;
-    while (p.peek(0)) |c| {
+    while (p.peek(0)) |c| : (p.pos += 1) {
         var ok = false;
         if (std.ascii.isAlphanumeric(c)) ok = true;
         inline for (extra) |ext| {
@@ -104,8 +103,6 @@ pub fn parseWordExtra(p: *CommonParser, comptime extra: []const u8) ![]const u8 
                 ok = true;
         }
         if (!ok) break;
-
-        p.pos += 1;
     }
     const end = p.pos;
     return p.input[start..end];
@@ -123,9 +120,8 @@ fn parseDigits(
     comptime std.debug.assert(@typeInfo(T) == .int);
     comptime std.debug.assert(@typeInfo(T).int.signedness == .unsigned);
     const start = p.pos;
-    while (p.peek(0)) |c| {
+    while (p.peek(0)) |c| : (p.pos += 1) {
         if (std.mem.countScalar(u8, chars, c) == 0) break;
-        p.pos += 1;
     }
     const text = p.input[start..p.pos];
     const x = std.fmt.parseInt(u64, text, base) catch
@@ -162,15 +158,13 @@ pub fn parseString(p: *CommonParser) ![]const u8 {
     p.skipWhitespace();
     const start = p.pos;
     try p.expect('"');
-    const end = while (!p.eof()) {
+    const end = while (!p.eof()) : (p.pos += 1) {
         if (p.peek(0) == '"') {
             p.pos += 1;
             // A doubled quote is an escaped one, so the string continues.
-            if (p.peek(0) == '"')
-                p.pos += 1
-            else
+            if (p.peek(0) != '"')
                 break p.pos;
-        } else p.pos += 1;
+        }
     } else try p.err("Unterminated string", .{});
     return p.input[start + 1 .. end - 1];
 }

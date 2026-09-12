@@ -6,6 +6,7 @@ const Indexes = @import("Indexes.zig");
 
 pub const Net = @import("Net.zig");
 pub const Cell = @import("Cell.zig");
+pub const Meta = @import("Meta.zig");
 pub const cell_type = @import("cell_type.zig");
 pub const route = @import("route.zig");
 
@@ -16,6 +17,9 @@ arena: std.heap.ArenaAllocator,
 model: DeviceModel,
 design_name: []const u8,
 passes: std.EnumMap(Pass, []const u8),
+meta: Meta.List,
+
+metadata: std.ArrayList(Meta),
 
 cells: std.ArrayList(Cell),
 port_nets: std.ArrayList(Net.Ref),
@@ -26,6 +30,7 @@ route_edges: std.ArrayList(route.Edge),
 net_base_names: Interner(Net.BaseId),
 cell_names: Interner(Cell.Ref),
 pack_names: Interner(Cell.PackId),
+meta_tags: Interner(Meta.TagId),
 
 net_refs: std.AutoHashMapUnmanaged(struct { Net.BaseId, Indexes }, Net.Ref),
 
@@ -41,6 +46,9 @@ pub fn init(
         .model = model,
         .design_name = gpa.dupe(u8, design_name) catch common.oom(),
         .passes = .init(.{}),
+        .meta = .{},
+
+        .metadata = .empty,
 
         .cells = .empty,
         .port_nets = .empty,
@@ -51,6 +59,7 @@ pub fn init(
         .cell_names = .init(gpa),
         .net_base_names = .init(gpa),
         .pack_names = .init(gpa),
+        .meta_tags = .init(gpa),
         .net_refs = .empty,
     };
 }
@@ -58,6 +67,7 @@ pub fn init(
 pub fn deinit(self: *Netlist) void {
     self.gpa.free(self.design_name);
     self.arena.deinit();
+    self.metadata.deinit(self.gpa);
     self.cells.deinit(self.gpa);
     self.port_nets.deinit(self.gpa);
     self.nets.deinit(self.gpa);
@@ -65,6 +75,7 @@ pub fn deinit(self: *Netlist) void {
     self.cell_names.deinit();
     self.net_base_names.deinit();
     self.pack_names.deinit();
+    self.meta_tags.deinit();
     self.net_refs.deinit(self.gpa);
 }
 
@@ -82,6 +93,37 @@ pub fn setPass(self: *Netlist, pass: Pass, text: []const u8) void {
         break :blk r;
     } else self.arena.allocator().dupe(u8, text) catch common.oom();
     self.passes.put(pass, new_text);
+}
+
+// Metadata
+
+pub const Owner = union(enum) { file, net: Net.Ref, cell: Cell.Ref };
+
+pub fn addMetadata(self: *Netlist, owner: Owner, tag: []const u8, data: []const u8) void {
+    const list = switch (owner) {
+        .file => &self.meta,
+        .cell => |ref| &self.getCell(ref).meta,
+        .net => |ref| &self.getNet(ref).meta,
+    };
+    const tag_id = self.meta_tags.intern(tag);
+
+    var it = list.head;
+    while (it != .none) : (it = self.metadata.items[@intFromEnum(it)].next) {
+        const m = self.metadata.items[@intFromEnum(it)];
+        if (m.tag == tag_id and std.mem.eql(u8, m.data, data)) return;
+    }
+
+    const ref: Meta.Ref = @enumFromInt(self.metadata.items.len);
+    self.metadata.append(self.gpa, .{
+        .tag = tag_id,
+        .data = self.arena.allocator().dupe(u8, data) catch common.oom(),
+    }) catch common.oom();
+
+    if (list.tail == .none)
+        list.head = ref
+    else
+        self.metadata.items[@intFromEnum(list.tail)].next = ref;
+    list.tail = ref;
 }
 
 // Nets

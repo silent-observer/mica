@@ -1,6 +1,7 @@
 const std = @import("std");
 const common = @import("../common.zig");
 const Net = @import("Net.zig");
+const Meta = @import("Meta.zig");
 const cell_type = @import("cell_type.zig");
 
 pub const Cell = @This();
@@ -19,6 +20,7 @@ rst: Net.Ref = .none,
 pack: PackId = .none,
 slot: SlotId = .none,
 site: ?common.TileCoords = null,
+meta: Meta.List = .{},
 
 pub const Ref = enum(u32) {
     none = 0xFFFF_FFFF,

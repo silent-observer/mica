@@ -172,5 +172,5 @@ BramDataCommand = RawHexNumber(ADDR_WIDTH) ':' RawHexNumber(DATA_WIDTH)+ ';'
 
 Metadata = MetadataTag MetadataData ';'
 
-MetadataTag = /@[A-Za-z0-9_.]+/
-MetadataData = /([^;"]|"[^"]*")*/
+MetadataTag = /@[A-Za-z][A-Za-z0-9_]*/
+MetadataData = /([^;"]|"([^"]|"")*")*/
