@@ -12,6 +12,7 @@ pub const route = @import("route.zig");
 pub const Netlist = @This();
 
 gpa: std.mem.Allocator,
+arena: std.heap.ArenaAllocator,
 model: DeviceModel,
 design_name: []const u8,
 passes: std.EnumMap(Pass, []const u8),
@@ -35,6 +36,7 @@ pub fn init(
 ) Netlist {
     return Netlist{
         .gpa = gpa,
+        .arena = .init(gpa),
 
         .model = model,
         .design_name = gpa.dupe(u8, design_name) catch common.oom(),
@@ -55,12 +57,7 @@ pub fn init(
 
 pub fn deinit(self: *Netlist) void {
     self.gpa.free(self.design_name);
-    {
-        var iter = self.passes.iterator();
-        while (iter.next()) |e| {
-            self.gpa.free(e.value.*);
-        }
-    }
+    self.arena.deinit();
     self.cells.deinit(self.gpa);
     self.port_nets.deinit(self.gpa);
     self.nets.deinit(self.gpa);
@@ -77,13 +74,13 @@ pub const Pass = enum { synth, opt, techmap, pack, place, route };
 pub fn setPass(self: *Netlist, pass: Pass, text: []const u8) void {
     const new_text = if (self.passes.get(pass)) |old_text| blk: {
         const r = std.mem.concat(
-            self.gpa,
+            self.arena.allocator(),
             u8,
             &.{ old_text, "\n", text },
         ) catch common.oom();
-        self.gpa.free(old_text);
+        self.arena.allocator().free(old_text);
         break :blk r;
-    } else self.gpa.dupe(u8, text) catch common.oom();
+    } else self.arena.allocator().dupe(u8, text) catch common.oom();
     self.passes.put(pass, new_text);
 }
 
