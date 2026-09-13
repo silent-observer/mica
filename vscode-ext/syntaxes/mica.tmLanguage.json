@@ -25,6 +25,9 @@
       "include": "#bram-block"
     },
     {
+      "include": "#dsp-block"
+    },
+    {
       "include": "#io-block"
     }
   ],
@@ -436,7 +439,7 @@
       "patterns": [
         {
           "name": "meta.assignment.mica",
-          "match": "\\b([A-Z][A-Z0-9_]*)\\s*(=)\\s*(0x[0-9A-Fa-f]+|\\d+|above|A1)?\\s*(;)?",
+          "match": "\\b([A-Z][A-Z0-9_]*)\\s*(=)\\s*(0x[0-9A-Fa-f]+|0b[01]+|CLK\\d+|RST\\d+|code\\s+\\d+|above|A1|\\d+)?\\s*(;)?",
           "captures": {
             "1": {
               "name": "variable.language.parameter.mica"
@@ -488,7 +491,7 @@
       "patterns": [
         {
           "name": "meta.routing-assignment.mica",
-          "match": "^\\s*(\\S+)\\s*(=)\\s*(\\S+)?\\s*(;)?",
+          "match": "^\\s*([^\\s=;]+)\\s*(=)\\s*([^;\\s](?:[^;]*[^;\\s])?)?\\s*(;)?",
           "captures": {
             "1": {
               "patterns": [

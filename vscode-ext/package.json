@@ -16,6 +16,16 @@
         "extensions": [
           ".mica"
         ]
+      },
+      {
+        "id": "mnl",
+        "aliases": [
+          "Mica Netlist",
+          "mnl"
+        ],
+        "extensions": [
+          ".mnl"
+        ]
       }
     ],
     "grammars": [
@@ -23,6 +33,11 @@
         "language": "mica",
         "scopeName": "source.mica",
         "path": "./syntaxes/mica.tmLanguage.json"
+      },
+      {
+        "language": "mnl",
+        "scopeName": "source.mnl",
+        "path": "./syntaxes/mnl.tmLanguage.json"
       }
     ]
   }

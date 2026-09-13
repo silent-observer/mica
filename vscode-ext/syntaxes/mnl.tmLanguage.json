@@ -1,0 +1,730 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Mica Netlist",
+  "scopeName": "source.mnl",
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#metadata"
+    },
+    {
+      "include": "#format-header"
+    },
+    {
+      "include": "#device-header"
+    },
+    {
+      "include": "#design-header"
+    },
+    {
+      "include": "#pass-header"
+    },
+    {
+      "include": "#net-block"
+    },
+    {
+      "include": "#net-decl"
+    },
+    {
+      "include": "#cell-block"
+    }
+  ],
+
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.double-slash.mnl",
+          "match": "//.*$"
+        }
+      ]
+    },
+
+    "metadata": {
+      "patterns": [
+        {
+          "name": "meta.metadata.mnl",
+          "begin": "(@[A-Za-z][A-Za-z0-9_]*)",
+          "beginCaptures": {
+            "1": {
+              "name": "entity.name.tag.metadata.mnl"
+            }
+          },
+          "end": "(;)",
+          "endCaptures": {
+            "1": {
+              "name": "punctuation.terminator.mnl"
+            }
+          },
+          "patterns": [
+            {
+              "name": "string.quoted.double.metadata.mnl",
+              "begin": "\"",
+              "end": "\"(?!\")",
+              "patterns": [
+                {
+                  "name": "constant.character.escape.mnl",
+                  "match": "\"\""
+                }
+              ]
+            },
+            {
+              "name": "meta.embedded.metadata.mnl",
+              "match": "[^;\"]+"
+            }
+          ]
+        }
+      ]
+    },
+
+    "format-header": {
+      "patterns": [
+        {
+          "name": "meta.header.format.mnl",
+          "match": "\\b(format)\\s+(\\d+)\\s*(;)",
+          "captures": {
+            "1": {
+              "name": "keyword.control.format.mnl"
+            },
+            "2": {
+              "name": "constant.numeric.version.mnl"
+            },
+            "3": {
+              "name": "punctuation.terminator.mnl"
+            }
+          }
+        }
+      ]
+    },
+
+    "device-header": {
+      "patterns": [
+        {
+          "name": "meta.header.device.mnl",
+          "match": "\\b(device)\\s+(\"[^\"]*\")\\s*(;)",
+          "captures": {
+            "1": {
+              "name": "keyword.control.device.mnl"
+            },
+            "2": {
+              "name": "string.quoted.double.device.mnl"
+            },
+            "3": {
+              "name": "punctuation.terminator.mnl"
+            }
+          }
+        }
+      ]
+    },
+
+    "design-header": {
+      "patterns": [
+        {
+          "name": "meta.header.design.mnl",
+          "match": "\\b(design)\\s+(\"[^\"]*\")\\s*(;)",
+          "captures": {
+            "1": {
+              "name": "keyword.control.design.mnl"
+            },
+            "2": {
+              "name": "string.quoted.double.design.mnl"
+            },
+            "3": {
+              "name": "punctuation.terminator.mnl"
+            }
+          }
+        }
+      ]
+    },
+
+    "pass-header": {
+      "patterns": [
+        {
+          "name": "meta.header.pass.mnl",
+          "match": "\\b(pass)\\s+(synth|opt|techmap|pack|place|route)\\s+(\"[^\"]*\")\\s*(;)",
+          "captures": {
+            "1": {
+              "name": "keyword.control.pass.mnl"
+            },
+            "2": {
+              "name": "support.constant.pass-name.mnl"
+            },
+            "3": {
+              "name": "string.quoted.double.pass.mnl"
+            },
+            "4": {
+              "name": "punctuation.terminator.mnl"
+            }
+          }
+        }
+      ]
+    },
+
+    "net-decl": {
+      "patterns": [
+        {
+          "name": "meta.net-declaration.mnl",
+          "match": "\\b(net)\\s+([A-Za-z][A-Za-z0-9_/]*(?:\\s*\\[[^\\]]*\\])*)\\s*(?:(:)\\s*(clock|reset)\\s*)?(;)",
+          "captures": {
+            "1": {
+              "name": "keyword.control.net.mnl"
+            },
+            "2": {
+              "patterns": [
+                {
+                  "include": "#signal-name"
+                }
+              ]
+            },
+            "3": {
+              "name": "punctuation.separator.type.mnl"
+            },
+            "4": {
+              "name": "storage.type.net-kind.mnl"
+            },
+            "5": {
+              "name": "punctuation.terminator.mnl"
+            }
+          }
+        }
+      ]
+    },
+
+    "net-block": {
+      "patterns": [
+        {
+          "name": "meta.block.net.mnl",
+          "begin": "\\b(net)\\s+([A-Za-z][A-Za-z0-9_/]*(?:\\s*\\[[^\\]]*\\])*)\\s*(?:(:)\\s*(clock|reset)\\s*)?(\\{)",
+          "beginCaptures": {
+            "1": {
+              "name": "keyword.control.net.mnl"
+            },
+            "2": {
+              "patterns": [
+                {
+                  "include": "#signal-name"
+                }
+              ]
+            },
+            "3": {
+              "name": "punctuation.separator.type.mnl"
+            },
+            "4": {
+              "name": "storage.type.net-kind.mnl"
+            },
+            "5": {
+              "name": "punctuation.section.block.begin.mnl"
+            }
+          },
+          "end": "(\\})",
+          "endCaptures": {
+            "1": {
+              "name": "punctuation.section.block.end.mnl"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#comments"
+            },
+            {
+              "include": "#metadata"
+            },
+            {
+              "include": "#net-param"
+            },
+            {
+              "include": "#route-block"
+            }
+          ]
+        }
+      ]
+    },
+
+    "net-param": {
+      "patterns": [
+        {
+          "name": "meta.assignment.mnl",
+          "match": "\\b(PERIOD|CLK|RST|PIN)\\s*(=)\\s*(0x[0-9A-Fa-f_]+|0b[01_]+|\\d[0-9_]*)\\s*(;)",
+          "captures": {
+            "1": {
+              "name": "variable.language.parameter.mnl"
+            },
+            "2": {
+              "name": "keyword.operator.assignment.mnl"
+            },
+            "3": {
+              "name": "constant.numeric.value.mnl"
+            },
+            "4": {
+              "name": "punctuation.terminator.mnl"
+            }
+          }
+        }
+      ]
+    },
+
+    "route-block": {
+      "patterns": [
+        {
+          "name": "meta.block.route.mnl",
+          "begin": "\\b(route)\\s*(\\{)",
+          "beginCaptures": {
+            "1": {
+              "name": "keyword.control.route.mnl"
+            },
+            "2": {
+              "name": "punctuation.section.block.begin.mnl"
+            }
+          },
+          "end": "(\\})",
+          "endCaptures": {
+            "1": {
+              "name": "punctuation.section.block.end.mnl"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#comments"
+            },
+            {
+              "include": "#switch-route"
+            },
+            {
+              "include": "#tile-route"
+            }
+          ]
+        }
+      ]
+    },
+
+    "switch-route": {
+      "patterns": [
+        {
+          "name": "meta.route.switch.mnl",
+          "match": "\\b(switch)\\s*(\\()\\s*(\\d+)\\s*(,)\\s*(\\d+)\\s*(\\))\\s*(:)\\s*([^=;]+?)\\s*(=)\\s*([^;]+?)\\s*(;)",
+          "captures": {
+            "1": {
+              "name": "keyword.control.switch.mnl"
+            },
+            "2": {
+              "name": "punctuation.definition.coordinates.begin.mnl"
+            },
+            "3": {
+              "name": "constant.numeric.coordinate.x.mnl"
+            },
+            "4": {
+              "name": "punctuation.separator.coordinate.mnl"
+            },
+            "5": {
+              "name": "constant.numeric.coordinate.y.mnl"
+            },
+            "6": {
+              "name": "punctuation.definition.coordinates.end.mnl"
+            },
+            "7": {
+              "name": "punctuation.separator.route.mnl"
+            },
+            "8": {
+              "patterns": [
+                {
+                  "include": "#routing-reference"
+                }
+              ]
+            },
+            "9": {
+              "name": "keyword.operator.assignment.mnl"
+            },
+            "10": {
+              "patterns": [
+                {
+                  "include": "#routing-reference"
+                }
+              ]
+            },
+            "11": {
+              "name": "punctuation.terminator.mnl"
+            }
+          }
+        }
+      ]
+    },
+
+    "tile-route": {
+      "patterns": [
+        {
+          "name": "meta.route.tile.mnl",
+          "match": "\\b(logic|bram|dsp|io)\\s*(\\()\\s*(\\d+)\\s*(,)\\s*(\\d+)\\s*(\\))\\s*(:)\\s*(in)\\s+([A-Z][A-Z0-9_]*(?:\\[\\d+\\])?)\\s*(=)\\s*([^;]+?)\\s*(;)",
+          "captures": {
+            "1": {
+              "name": "keyword.control.tile.mnl"
+            },
+            "2": {
+              "name": "punctuation.definition.coordinates.begin.mnl"
+            },
+            "3": {
+              "name": "constant.numeric.coordinate.x.mnl"
+            },
+            "4": {
+              "name": "punctuation.separator.coordinate.mnl"
+            },
+            "5": {
+              "name": "constant.numeric.coordinate.y.mnl"
+            },
+            "6": {
+              "name": "punctuation.definition.coordinates.end.mnl"
+            },
+            "7": {
+              "name": "punctuation.separator.route.mnl"
+            },
+            "8": {
+              "name": "storage.type.input.mnl"
+            },
+            "9": {
+              "name": "variable.other.input.mnl"
+            },
+            "10": {
+              "name": "keyword.operator.assignment.mnl"
+            },
+            "11": {
+              "patterns": [
+                {
+                  "include": "#routing-reference"
+                }
+              ]
+            },
+            "12": {
+              "name": "punctuation.terminator.mnl"
+            }
+          }
+        }
+      ]
+    },
+
+    "routing-reference": {
+      "patterns": [
+        {
+          "name": "variable.other.routing.mnl",
+          "match": "\\b(?:NE|SE|SW|NW)\\.(?:ZERO|O1A|O2A|O1B|O2B|I|O|DO)(?:\\[\\d+\\])?"
+        },
+        {
+          "name": "variable.other.routing.mnl",
+          "match": "\\b(?:[NESW]|[HEW][0-4])(?:\\[[UDLR]+\\])?\\.(?:L(?:1|4|16)\\[\\d+\\])"
+        },
+        {
+          "name": "variable.other.routing.mnl",
+          "match": "\\b(?:O1A|O2A|O1B|O2B)"
+        },
+        {
+          "name": "constant.numeric.integer.mnl",
+          "match": "\\b\\d+"
+        }
+      ]
+    },
+
+    "cell-block": {
+      "patterns": [
+        {
+          "name": "meta.block.cell.mnl",
+          "begin": "\\b(cell)\\s+([A-Za-z][A-Za-z0-9_/]*)\\s*(?:(:)\\s*(\\$?[A-Za-z][A-Za-z0-9_]*)\\s*)?(\\{)",
+          "beginCaptures": {
+            "1": {
+              "name": "keyword.control.cell.mnl"
+            },
+            "2": {
+              "name": "entity.name.function.cell.mnl"
+            },
+            "3": {
+              "name": "punctuation.separator.type.mnl"
+            },
+            "4": {
+              "patterns": [
+                {
+                  "include": "#cell-type"
+                }
+              ]
+            },
+            "5": {
+              "name": "punctuation.section.block.begin.mnl"
+            }
+          },
+          "end": "(\\})",
+          "endCaptures": {
+            "1": {
+              "name": "punctuation.section.block.end.mnl"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#comments"
+            },
+            {
+              "include": "#metadata"
+            },
+            {
+              "include": "#cell-port"
+            },
+            {
+              "include": "#cell-pack"
+            },
+            {
+              "include": "#cell-slot"
+            },
+            {
+              "include": "#cell-site"
+            },
+            {
+              "include": "#mem-data"
+            },
+            {
+              "include": "#cell-param"
+            }
+          ]
+        }
+      ]
+    },
+
+    "cell-type": {
+      "patterns": [
+        {
+          "name": "support.type.cell.physical.mnl",
+          "match": "\\b(?:LUT4|LUT3|FF|CARRY|MEM_DUAL|MEM|BRAM_DUAL|BRAM|DSP_ACC|DSP|IO)\\b"
+        },
+        {
+          "name": "support.type.cell.logical.mnl",
+          "match": "\\$(?:add|sub|mul|mux|decode|and_all|or_all|xor_all|and|or|not|xor|ff|rom_dual|rom|ram_dual|ram)\\b"
+        },
+        {
+          "name": "support.type.cell.mnl",
+          "match": "\\$?[A-Za-z][A-Za-z0-9_]*"
+        }
+      ]
+    },
+
+    "cell-port": {
+      "patterns": [
+        {
+          "name": "meta.port.mnl",
+          "match": "\\b(in|out)\\s+([A-Z][A-Z0-9_]*(?:\\s*\\[[^\\]]*\\])*)\\s*(=)\\s*([A-Za-z][A-Za-z0-9_/]*(?:\\s*\\[[^\\]]*\\])*|[01])\\s*(;)",
+          "captures": {
+            "1": {
+              "name": "storage.type.port.mnl"
+            },
+            "2": {
+              "patterns": [
+                {
+                  "include": "#port-name"
+                }
+              ]
+            },
+            "3": {
+              "name": "keyword.operator.assignment.mnl"
+            },
+            "4": {
+              "patterns": [
+                {
+                  "include": "#signal-name"
+                }
+              ]
+            },
+            "5": {
+              "name": "punctuation.terminator.mnl"
+            }
+          }
+        }
+      ]
+    },
+
+    "cell-pack": {
+      "patterns": [
+        {
+          "name": "meta.assignment.pack.mnl",
+          "match": "\\b(PACK)\\s*(=)\\s*([A-Za-z][A-Za-z0-9_/]*)\\s*(;)",
+          "captures": {
+            "1": {
+              "name": "variable.language.parameter.mnl"
+            },
+            "2": {
+              "name": "keyword.operator.assignment.mnl"
+            },
+            "3": {
+              "name": "entity.name.tag.pack.mnl"
+            },
+            "4": {
+              "name": "punctuation.terminator.mnl"
+            }
+          }
+        }
+      ]
+    },
+
+    "cell-slot": {
+      "patterns": [
+        {
+          "name": "meta.assignment.slot.mnl",
+          "match": "\\b(SLOT)\\s*(=)\\s*(LE[12][AB]?)\\s*(;)",
+          "captures": {
+            "1": {
+              "name": "variable.language.parameter.mnl"
+            },
+            "2": {
+              "name": "keyword.operator.assignment.mnl"
+            },
+            "3": {
+              "name": "support.constant.slot.mnl"
+            },
+            "4": {
+              "name": "punctuation.terminator.mnl"
+            }
+          }
+        }
+      ]
+    },
+
+    "cell-site": {
+      "patterns": [
+        {
+          "name": "meta.assignment.site.mnl",
+          "match": "\\b(SITE)\\s*(=)\\s*(\\()\\s*(\\d+)\\s*(,)\\s*(\\d+)\\s*(\\))\\s*(;)",
+          "captures": {
+            "1": {
+              "name": "variable.language.parameter.mnl"
+            },
+            "2": {
+              "name": "keyword.operator.assignment.mnl"
+            },
+            "3": {
+              "name": "punctuation.definition.coordinates.begin.mnl"
+            },
+            "4": {
+              "name": "constant.numeric.coordinate.x.mnl"
+            },
+            "5": {
+              "name": "punctuation.separator.coordinate.mnl"
+            },
+            "6": {
+              "name": "constant.numeric.coordinate.y.mnl"
+            },
+            "7": {
+              "name": "punctuation.definition.coordinates.end.mnl"
+            },
+            "8": {
+              "name": "punctuation.terminator.mnl"
+            }
+          }
+        }
+      ]
+    },
+
+    "cell-param": {
+      "patterns": [
+        {
+          "name": "meta.assignment.mnl",
+          "match": "\\b([A-Z][A-Z0-9_]*)\\s*(=)\\s*(0x[0-9A-Fa-f_]+|0b[01_]+|\\d[0-9_]*)\\s*(;)",
+          "captures": {
+            "1": {
+              "name": "variable.language.parameter.mnl"
+            },
+            "2": {
+              "name": "keyword.operator.assignment.mnl"
+            },
+            "3": {
+              "name": "constant.numeric.value.mnl"
+            },
+            "4": {
+              "name": "punctuation.terminator.mnl"
+            }
+          }
+        }
+      ]
+    },
+
+    "mem-data": {
+      "patterns": [
+        {
+          "name": "meta.block.data.mnl",
+          "begin": "\\b(data)\\s*(\\{)",
+          "beginCaptures": {
+            "1": {
+              "name": "keyword.control.data.mnl"
+            },
+            "2": {
+              "name": "punctuation.section.block.begin.mnl"
+            }
+          },
+          "end": "(\\})",
+          "endCaptures": {
+            "1": {
+              "name": "punctuation.section.block.end.mnl"
+            }
+          },
+          "patterns": [
+            {
+              "include": "#comments"
+            },
+            {
+              "name": "meta.data-row.mnl",
+              "match": "([0-9A-Fa-f_]+)\\s*(:)\\s*((?:[0-9A-Fa-f_]+\\s*)+)(;)?",
+              "captures": {
+                "1": {
+                  "name": "constant.numeric.address.mnl"
+                },
+                "2": {
+                  "name": "punctuation.separator.data.mnl"
+                },
+                "3": {
+                  "name": "constant.numeric.data.mnl"
+                },
+                "4": {
+                  "name": "punctuation.terminator.mnl"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+
+    "signal-name": {
+      "patterns": [
+        {
+          "name": "variable.other.net.mnl",
+          "match": "[A-Za-z][A-Za-z0-9_/]*"
+        },
+        {
+          "include": "#index-parts"
+        }
+      ]
+    },
+
+    "port-name": {
+      "patterns": [
+        {
+          "name": "variable.other.port.mnl",
+          "match": "[A-Za-z][A-Za-z0-9_]*"
+        },
+        {
+          "include": "#index-parts"
+        }
+      ]
+    },
+
+    "index-parts": {
+      "patterns": [
+        {
+          "name": "constant.numeric.integer.mnl",
+          "match": "0x[0-9A-Fa-f_]+|0b[01_]+|\\d[0-9_]*"
+        },
+        {
+          "name": "punctuation.separator.range.mnl",
+          "match": "\\.\\."
+        },
+        {
+          "name": "punctuation.definition.index.mnl",
+          "match": "[\\[\\]]"
+        }
+      ]
+    }
+  }
+}
