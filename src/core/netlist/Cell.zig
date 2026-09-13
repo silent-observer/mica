@@ -1,3 +1,7 @@
+//! One cell. Since the IR has no tile object, packing and placement live here
+//! too, as `pack`/`slot`/`site`. Only inputs the tools cannot derive are
+//! stored: `FRAC*`, `CARRY`, `MEM` and friends are computed at lowering.
+
 const std = @import("std");
 const common = @import("../common.zig");
 const Net = @import("Net.zig");

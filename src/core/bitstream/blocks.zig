@@ -1,3 +1,8 @@
+//! The textual keyword tables, shared by `TextParser` and `TextEmitter` so the
+//! two cannot disagree: each `Field` maps a keyword to a `Configuration` field
+//! and a `ValueKind` saying how the value is printed and parsed. Adding a
+//! settable field is one line here plus the bits in the binary converters.
+
 const std = @import("std");
 const common = @import("../common.zig");
 const Configuration = @import("../Configuration.zig");

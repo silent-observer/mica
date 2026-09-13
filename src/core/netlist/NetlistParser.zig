@@ -1,3 +1,8 @@
+//! `.netlist` text to `Netlist`: the header and block dispatch, with the block
+//! bodies in the `parse_*.zig` files beside it. The `arena` is scratch for one
+//! cell command and is reset each time round the loop - anything meant to
+//! outlive that belongs to the `Netlist`'s own arena.
+
 const std = @import("std");
 
 const common = @import("../common.zig");

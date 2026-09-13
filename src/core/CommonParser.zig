@@ -1,3 +1,8 @@
+//! The lexing and the spellings both textual formats share: the
+//! `format`/`device` header, tile and switch coordinates, and every wire name.
+//! That sharing is what makes a netlist `route {}` body literally bitstream
+//! lines regrouped by net.
+
 const std = @import("std");
 
 const common = @import("common.zig");
@@ -405,7 +410,7 @@ pub fn parseDirectionalWire4x1(p: *CommonParser) !?common.DirectionalWire4x1 {
 
 /// `DO[n]` on BRAM and `O[n]` on DSP name one of the four outputs of a cell in
 /// a 4x1 tile. The index runs across the whole tile, so it has to land in the
-/// quarter belonging to this corner's row (§"Switchboxes").
+/// quarter belonging to this corner's row (see "Switchboxes").
 fn parseBigTileOutput(
     p: *CommonParser,
     sw: common.SwitchCoords,

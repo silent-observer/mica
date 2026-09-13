@@ -95,7 +95,7 @@ fn sectionTiles(model: *const DeviceModel, section: u8) u32 {
 
 const Frame = struct { section: u8, offset: u32, size: u32 };
 
-/// Walks the container structure and checks everything §"Binary format"
+/// Walks the container structure and checks everything "Binary format"
 /// requires of an emitted file: correct magic, version, CRC and frame count,
 /// and frames that are non-empty, in a known section, tile-aligned, sorted,
 /// non-overlapping, inside their section and zero-padded. When `expected` is
@@ -155,7 +155,7 @@ fn checkBitstream(
 // Golden files
 // -------------------------------------------------------------------------
 
-/// §"Worked examples", example 1: pin 2 inverted onto pin 3 through logic tile
+/// From "Worked examples", example 1: pin 2 inverted onto pin 3 through logic tile
 /// (1,2).
 const inverter_text = @embedFile("inverter_mica");
 
@@ -184,7 +184,7 @@ test "golden: the inverter example, both directions" {
     defer t.deinit(alloc);
     try std.testing.expectEqualStrings(inverter_text, t.text);
 
-    // §"Textual format": zero-valued commands are skipped, except that a wire
+    // Per "Textual format": zero-valued commands are skipped, except that a wire
     // something else reads is named anyway. W.L1[0] = NW.I is code 0 and
     // appears only because logic (1,2) reads that segment on A1 - drop the
     // reader and the line goes with it.
@@ -198,7 +198,7 @@ test "golden: the inverter example, both directions" {
 }
 
 test "golden: the toggle example round-trips through both formats" {
-    // §"Worked examples", example 2: the inverter fed from its own registered
+    // From "Worked examples", example 2: the inverter fed from its own registered
     // output, which adds the global block, a register and a clock network.
     const text = @embedFile("toggle_mica");
     const r = try parseText(text);
@@ -225,7 +225,7 @@ test "golden: BRAM, DSP and the remaining value kinds" {
     // Neither worked example touches BRAM, DSP or most `ValueKind`s, so this
     // fixture exists to cover them. Its two switch blocks are there because
     // the BRAM inputs read those segments: all three sinks are code 0, named
-    // only because of the exception in §"Textual format".
+    // only because of the exception in "Textual format".
     const text = @embedFile("bram_dsp_mica");
     const r = try parseText(text);
     defer r.deinit(alloc);
@@ -254,7 +254,7 @@ test "golden: BRAM, DSP and the remaining value kinds" {
 }
 
 test "golden: values that only the emitter can decide" {
-    // WIDTH has to precede data {} (§"Textual format" and the grammar), so a
+    // WIDTH has to precede data {} ("Textual format" and the grammar), so a
     // width of 1 - which encodes as 0 - must not be skipped as a zero value.
     var c = Configuration.init(.mica1s, alloc);
     defer c.deinit(alloc);
@@ -273,7 +273,7 @@ test "golden: values that only the emitter can decide" {
     try expectEqualConfigs(&c, &r.c.?);
 
     // A code that names no wire here degrades to `code <N>` with an error
-    // (§"Bitstream format"). Code 10 on A1 is N[R].L4[2], whose segment would
+    // ("Bitstream format"). Code 10 on A1 is N[R].L4[2], whose segment would
     // have to start three switchboxes west of the grid.
     var d = Configuration.init(.mica1s, alloc);
     defer d.deinit(alloc);
@@ -387,7 +387,7 @@ test "property: a configuration survives the text round trip" {
         defer r.deinit(alloc);
         try expectEqualConfigs(&c, &r.c.?);
 
-        // §"Textual format": the representation is unique, so emitting the
+        // Per "Textual format": the representation is unique, so emitting the
         // parsed configuration has to give back the same text.
         const again = TextEmitter.emit(&r.c.?, alloc);
         defer again.deinit(alloc);
@@ -458,7 +458,7 @@ const Case = struct {
 const io_tiles = DeviceModel.mica1s.tile_counts.get(.io);
 
 test "binary: input that must be rejected" {
-    // §"Binary format": a bad header, a frame that runs off the end of the
+    // Per "Binary format": a bad header, a frame that runs off the end of the
     // file, one that starts mid-tile, or one that leaves its section.
     for ([_]Case{
         .{ .raw = "", .expect = "0x0: File must be at least 20 bytes" },
@@ -493,7 +493,7 @@ test "binary: input that must be rejected" {
 }
 
 test "binary: malformations that are only warnings" {
-    // §"Binary format": an invalid CRC, SIZE = 0, SECTION > 6 and non-zero
+    // Per "Binary format": an invalid CRC, SIZE = 0, SECTION > 6 and non-zero
     // padding are all illegal but still convertible to text, as are frames out
     // of order or overlapping.
     for ([_]Case{
@@ -556,9 +556,9 @@ fn expectMessage(case: Case, kind: enum { fatal, warning }) !void {
 }
 
 test "binary: a frame may cover several tiles, or stop inside one" {
-    // §"Binary format": a frame need not correspond to specific tiles, as long
+    // Per "Binary format": a frame need not correspond to specific tiles, as long
     // as it starts on one. Three IO tiles in a single 105-bit frame, the
-    // packing §"Worked examples" uses for the inverter.
+    // packing "Worked examples" uses for the inverter.
     const bytes = buildBitstream(&.{.{
         .section = 5,
         .offset = 50 * 35,
@@ -637,7 +637,7 @@ test "text: errors are reported with a line and column" {
             .err = "2:14: Unterminated string",
         },
         // BRAM address and data inputs hold a 4-bit code, unlike every other
-        // tile input (§"Connection boxes"); WE1 alongside gets the full 5.
+        // tile input ("Connection boxes"); WE1 alongside gets the full 5.
         .{
             .text = "format 1;\ndevice \"M1/S\";\nbram (1, 9) { in A1[0] = code 16; }\n",
             .err = "3:34: Expected a 4-bit number, but got '16', which needs 5 bits",

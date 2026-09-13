@@ -1,3 +1,9 @@
+//! `Configuration` to `.mica` text. Never fails - the spec guarantees every
+//! binary bitstream has a textual form, so problems go to `warn()` and emission
+//! continues. Zero-valued blocks are omitted, except that a wire some sink
+//! reads is printed even when its driver code is 0, which is what the
+//! `read_wires`/`read_boxes` pre-pass over the whole configuration is for.
+
 const std = @import("std");
 
 const common = @import("../common.zig");
@@ -330,7 +336,7 @@ fn emitCommands(
                 else
                     @field(cfg.*, f.field);
 
-                // WIDTH has to precede `data {}` (§"Textual format"), so a
+                // WIDTH has to precede `data {}` (see "Textual format"), so a
                 // width of 1 - which encodes as 0 - is written out anyway when
                 // the tile has data that it decides how to read.
                 const zero_is_meaningful = if (f.kind == .width)

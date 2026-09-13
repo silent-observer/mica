@@ -1,3 +1,8 @@
+//! `.mica` text to `Configuration`. The block bodies are driven by the comptime
+//! tables in `blocks.zig`; everything below the keyword level - coordinates,
+//! wire names, `data {}` - comes from `CommonParser`. Every problem is fatal,
+//! reported as a single `err` formatted with line:col.
+
 const std = @import("std");
 
 const common = @import("../common.zig");

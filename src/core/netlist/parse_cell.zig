@@ -1,3 +1,9 @@
+//! `cell` blocks. Both the port lookup table and the shape of a `data {}` block
+//! are derived from the cell's own parameters, so parameters must precede
+//! ports and data - and once `ports_len` is frozen by the first binding, a
+//! parameter changing afterwards would desynchronize it, hence the redefinition
+//! check. Parameter names are the upper-cased `ParamsUnion` field names.
+
 const std = @import("std");
 
 const common = @import("../common.zig");

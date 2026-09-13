@@ -1,3 +1,8 @@
+//! The coordinate vocabulary the rest of the code speaks: tile and switchbox
+//! coordinates, sides and directions with their turn algebra, wire classes and
+//! the per-tile-type input enums. Grid rows and columns *include* the IO ring,
+//! which is why `tileRows()` and `vertexRows()` both exist and differ.
+
 const std = @import("std");
 
 pub const TileType = enum {

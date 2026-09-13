@@ -1,3 +1,7 @@
+//! The `[3]` subscripts on a net or port name, and `Range` for the `[0..7]`
+//! spelling that expands to several of them. Nets are scalar, so `data[0..3]`
+//! is only sugar for four independent nets sharing a base name.
+
 const std = @import("std");
 
 const Indexes = @This();

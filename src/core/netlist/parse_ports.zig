@@ -1,3 +1,7 @@
+//! Binding of `in`/`out` commands to a cell's port span. `CLK` and `RST` are
+//! spelled like ports but live outside the table, on `Cell.clk`/`Cell.rst`, so
+//! they take no indexes and reject constant drivers.
+
 const std = @import("std");
 
 const NetlistParser = @import("NetlistParser.zig");

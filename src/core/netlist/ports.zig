@@ -1,3 +1,8 @@
+//! Turns a cell's port table into flat offsets into its `port_nets` span. A
+//! logical cell's widths are `Dim`s naming its own parameters, so its table
+//! cannot be built until those are known - hence the `ParamMissing` error and
+//! the rule that parameters precede ports.
+
 const Indexes = @import("Indexes.zig");
 const port_tables = @import("port_tables.zig");
 const cell_type = @import("cell_type.zig");

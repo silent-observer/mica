@@ -1,3 +1,8 @@
+//! `Configuration` to `.bit` binary, as `(section, bit offset, bit size, data)`
+//! frames. An all-zero tile is skipped by ending the current frame and
+//! advancing `frame_offset` past it, which is what keeps sparse bitstreams
+//! small - the gap in the offsets is the tile.
+
 const std = @import("std");
 
 const common = @import("../common.zig");

@@ -1,3 +1,8 @@
+//! A `DeviceModel` expanded into an explicit routing graph - wire, source and
+//! sink nodes plus the connections between them - for analysis rather than for
+//! bitstream conversion; nothing on the `Configuration` path uses it. The
+//! `nodes.csv`/`conns.csv` dumps run to tens of megabytes and are gitignored.
+
 const std = @import("std");
 const common = @import("common.zig");
 const DeviceModel = @import("DeviceModel.zig");

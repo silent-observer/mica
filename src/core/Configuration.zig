@@ -1,3 +1,9 @@
+//! In-memory image of a device's configuration memory, and the hub all four
+//! converters pass through. Deliberately a *dumb* mirror of the bitstream:
+//! fields hold raw codes, not resolved meanings, and the `get*` helpers
+//! implement the column-major index formulas - the IO one is interleaved
+//! (west, then alternating north/south, then east).
+
 const std = @import("std");
 const common = @import("common.zig");
 const DeviceModel = @import("DeviceModel.zig");

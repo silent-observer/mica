@@ -1,3 +1,8 @@
+//! Pure wire geometry, with no code tables in it. A segment is addressed two
+//! ways - by *local track*, invariant along the segment and used by
+//! switchboxes, and by *edge track*, its position in one channel and used by
+//! connection boxes - and this file is the conversion between them.
+
 const std = @import("std");
 const common = @import("common.zig");
 

@@ -1,3 +1,8 @@
+//! The cell type taxonomy: `Physical` cells map onto real tile resources and
+//! spell themselves in upper case, `Logical` ones are the `$`-prefixed
+//! technology-independent family. Each carries a `ParamsUnion` whose fields are
+//! optional, so "unset" stays distinguishable from an explicit zero.
+
 const std = @import("std");
 const common = @import("../common.zig");
 

@@ -1,3 +1,9 @@
+//! The universal IR carried between synthesis and the bitstream: a flat-array
+//! store of nets and cells, addressed by typed index enums rather than by
+//! pointer, since every list can reallocate. There is no tile object - a tile
+//! is the cells sharing a `SITE`. The format is monotonic, so the mutators here
+//! all take an idempotent repeat and reject only a contradicting one.
+
 const std = @import("std");
 const common = @import("../common.zig");
 const DeviceModel = @import("../DeviceModel.zig");

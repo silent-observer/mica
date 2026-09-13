@@ -1,3 +1,7 @@
+//! MSB-first bit packing into a growable buffer. The binary format is
+//! big-endian throughout, sub-byte fields included, so `write` emits an
+//! integer's high bit first; `finish` pads the last byte with zeroes.
+
 const std = @import("std");
 
 const BitWriter = @This();

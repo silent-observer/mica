@@ -1,3 +1,8 @@
+//! `net` blocks. A bare `net a;` may declare a whole range at once, while a
+//! block body applies to exactly one net. `route {}` bodies are bitstream
+//! routing lines grouped by net instead of by tile, so they parse through the
+//! same `CommonParser` spellings and are stored for lowering to scatter back.
+
 const std = @import("std");
 
 const common = @import("../common.zig");

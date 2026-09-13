@@ -1,3 +1,8 @@
+//! Parsing of `@tag data;`. The data is opaque, so it is scanned raw to the
+//! first `;` outside a string: `//` inside metadata is *not* a comment, and a
+//! missing `;` swallows the rest of the file. Callers must try this before
+//! their own `parseWord`/`check('}')`, or an `@` aborts the surrounding loop.
+
 const std = @import("std");
 
 const NetlistParser = @import("NetlistParser.zig");

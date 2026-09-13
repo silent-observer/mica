@@ -1,3 +1,7 @@
+//! String interner over an arena, generic in the id type it hands out. Ids are
+//! assigned in insertion order, which `Netlist.internCellRef` relies on: a name
+//! interned in `cell_names` *is* the index into `cells`.
+
 const std = @import("std");
 const oom = @import("../common.zig").oom;
 

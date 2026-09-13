@@ -1,3 +1,7 @@
+//! Signal spellings: a name with optional `[i]` or `[a..b]` subscripts, plus
+//! the source position where a bare `0` or `1` is a constant driver rather than
+//! a net name. Names admit `_` and `/` beyond the usual alphanumerics.
+
 const std = @import("std");
 
 const NetlistParser = @import("NetlistParser.zig");

@@ -1,3 +1,8 @@
+//! The code tables of connection boxes and switchboxes. `encode*` is
+//! defined as brute-force search over `decode*` so the two cannot drift, and
+//! `resolve*` layers `routing`'s geometry on top: emitters must use it, never
+//! bare `decode*`, or they will name wires truncated at the grid boundary.
+
 const std = @import("std");
 const common = @import("common.zig");
 const routing = @import("routing.zig");
@@ -123,7 +128,7 @@ const logic_inputs: std.EnumArray(common.LogicInput, LogicInputDesc) = .init(.{
     .ce2 = LogicInputDesc{ .parity = 1, .primary = null },
 });
 
-/// Code ranges of §"Logic tile inputs". Each switch below must tile [0, end),
+/// Code ranges from "Logic tile inputs". Each switch below must tile [0, end),
 /// which the compiler checks.
 const logic_abcd_codes = struct {
     const primary = 6; // 18: 9 CW then 9 CCW
@@ -314,7 +319,7 @@ const bram_inputs: [common.BramInput.TOTAL]BramInputDesc = blk: {
     break :blk t;
 };
 
-/// Code ranges of the address/data rows in §"Block RAM inputs". These are
+/// Code ranges of the address/data rows in "Block RAM inputs". These are
 /// 4-bit fields, so a valid bitstream never reaches past `end`.
 const bram_slot_codes = struct {
     const primary = 2; // 9
@@ -529,7 +534,7 @@ const dsp_inputs: [common.DspInput.TOTAL]DspInputDesc = blk: {
     break :blk t;
 };
 
-/// Code ranges of the A/B/C rows in §"DSP inputs".
+/// Code ranges of the A/B/C rows in "DSP inputs".
 const dsp_abc_codes = struct {
     const primary = 2; // 18: 9 CW then 9 CCW
     const secondary = 20; // 12: 6 west then 6 east
@@ -618,7 +623,7 @@ const io_inputs: std.EnumArray(common.IoInput, IoInputDesc) = .init(.{
     .oe = IoInputDesc{ .parity = 1, .d = 4 },
 });
 
-/// Code ranges of §"IO inputs".
+/// Code ranges from "IO inputs".
 const io_codes = struct {
     const primary = 2; // 18: 9 CW then 9 CCW
     const secondary = 20; // 12: 6 CW then 6 CCW

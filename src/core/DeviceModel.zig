@@ -1,3 +1,7 @@
+//! Device geometry, derived at comptime from a layout string like
+//! `"I 8L B 8L D 8L B 10L B 8L D 8L B 8L I"`. Adding a device is one `build`
+//! call plus an entry in `models`.
+
 const std = @import("std");
 const common = @import("common.zig");
 

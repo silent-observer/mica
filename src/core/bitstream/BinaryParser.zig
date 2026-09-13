@@ -1,3 +1,8 @@
+//! `.bit` binary to `Configuration`. Frames carry a bit offset rather than a
+//! tile index, so a frame need not correspond to any particular tile and the
+//! offsets are what place its contents. A bad CRC or an unknown section is a
+//! `warning`; only a header or a frame that runs off the end is a fatal `err`.
+
 const std = @import("std");
 
 const common = @import("../common.zig");

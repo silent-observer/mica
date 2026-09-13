@@ -1,3 +1,9 @@
+//! One `@tag data;` annotation, which the tools never interpret - the format
+//! requires it to pass through unaffected, so only the tag and the raw text are
+//! kept. Entries cannot use the contiguous-span trick the ports and route edges
+//! do, because a later block for one owner lands after other owners' entries;
+//! `Netlist.metadata` is one flat list in file order, threaded by `next`.
+
 const std = @import("std");
 
 pub const Meta = @This();

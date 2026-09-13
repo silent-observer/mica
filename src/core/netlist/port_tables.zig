@@ -1,3 +1,7 @@
+//! The declarative port table, one `CellEntry` per cell type - the netlist
+//! analogue of the bitstream's `blocks.zig`. `CLK` and `RST` are the two
+//! booleans rather than entries, because they bind outside the port span.
+
 const std = @import("std");
 const cell_type = @import("cell_type.zig");
 const ports = @import("ports.zig");

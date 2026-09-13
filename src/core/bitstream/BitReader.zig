@@ -1,3 +1,7 @@
+//! MSB-first bit unpacking, the inverse of `BitWriter`. Bounded by an explicit
+//! `bit_len` rather than by the slice, since a frame's last byte is padded:
+//! reads past it return null instead of the padding.
+
 const std = @import("std");
 
 const BitReader = @This();
