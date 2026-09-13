@@ -1,0 +1,180 @@
+format 1;
+device "M1/S";
+design "bram_dsp";
+
+pass synth "mica-synth 0.1";
+pass techmap "mica-map 0.1";
+pass place "mica-place 0.1";
+
+@tool "mica-synth 0.1";
+
+net clk : clock;
+net rst : reset;
+net we;
+net a[0];
+net a[1];
+net d[0];
+net q[0];
+net p[0];
+net p[1];
+net h;
+net m;
+net s;
+net t;
+net f;
+net g;
+
+cell store : BRAM {
+    WIDTH = 8;
+    data {
+        000: 77 24 5D 6D 2E 6B 7B 25;
+        008: 7F 6F;
+        1FF: C3;
+    }
+    SITE = (25, 38);
+
+    in CLK = clk;
+    in ADDR[0] = a[0];
+    in ADDR[1] = a[1];
+    in DI[0] = d[0];
+    in WE = we;
+    out DO[0] = q[0];
+}
+
+cell table : $rom {
+    DATA_WIDTH = 12;
+    ADDR_WIDTH = 4;
+    data {
+        0: ABC 007;
+        5: 100;
+        F: FFF;
+    }
+
+    in A[0] = a[0];
+    in A[1] = a[1];
+    in A[2] = 0;
+    in A[3] = 0;
+}
+
+cell mul : DSP {
+    SIGNED_A = 1;
+    SIGNED_B = 0;
+    SITE = (5, 18);
+
+    in A[0] = q[0];
+    in B[0] = d[0];
+    out O[0] = p[0];
+    out O[1] = p[1];
+}
+
+cell sum : LUT4 {
+    LUT = 0x8888;
+    PACK = out_stage;
+    SLOT = LE2;
+    SITE = (1, 8);
+
+    in A = p[0];
+    in B = p[1];
+    out O = f;
+}
+
+cell hold : FF {
+    PACK = out_stage;
+    SLOT = LE2;
+    SITE = (1, 8);
+
+    in CLK = clk;
+    in RST = rst;
+    in D = f;
+    in E = 1;
+    out Q = h;
+
+    @src "counter.v:17";
+}
+
+cell cy : CARRY {
+    LUT_P = 0x3C;
+    LUT_G = 0xC3;
+    PACK = out_stage;
+    SLOT = LE1;
+    SITE = (1, 8);
+
+    in B = m;
+    in C = p[1];
+    in D = we;
+    in CIN = 0;
+    out S = s;
+}
+
+cell acc : MEM {
+    INIT = 0x0000BEEF;
+    SITE = (2, 8);
+
+    in CLK = clk;
+    in ADDR[0] = a[0];
+    in ADDR[1] = a[1];
+    in DI = h;
+    in WE = we;
+    out DO = m;
+}
+
+cell half : LUT3 {
+    LUT = 0x0F;
+    PACK = pre_stage;
+    SLOT = LE1B;
+    SITE = (2, 10);
+
+    in B = we;
+    in C = s;
+    out O = g;
+}
+
+cell sel : $mux {
+    WIDTH = 1;
+    DEPTH = 1;
+
+    in IN[0][0] = s;
+    in IN[1][0] = m;
+    in SEL[0] = we;
+    out OUT[0] = d[0];
+}
+
+cell sync : FF {
+    in CLK = clk;
+    in D = s;
+    out Q = t;
+}
+
+net clk : clock {
+    PERIOD = 10000;
+    CLK = 3;
+    PIN = 1;
+}
+
+net rst : reset {
+    RST = 1;
+    PIN = 64;
+}
+
+net a[0] {
+    route {
+        switch (24, 37): E.L1[3] = NW.O1A;
+        bram (25, 38): in A1[0] = H0[R].L1[0];
+    }
+}
+
+net a[1] {
+    route {
+        switch (24, 37): E.L1[0] = NW.O1B;
+        bram (25, 38): in A1[1] = H0[R].L1[3];
+    }
+
+    @net_class "address";
+}
+
+net d[0] {
+    route {
+        switch (25, 37): N.L1[1] = NW.O1B;
+        bram (25, 38): in DI[0] = W0[U].L1[1];
+    }
+}

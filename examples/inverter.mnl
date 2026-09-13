@@ -1,0 +1,51 @@
+format 1;
+device "M1/S";
+design "inverter";
+
+pass synth "mica-synth 0.1";
+pass techmap "mica-map 0.1";
+pass pack "mica-pack 0.1";
+pass place "mica-place 0.1";
+pass route "mica-route 0.1";
+
+net a;
+net y;
+
+cell pad_a : IO {
+    PIN = 2;
+    PULLDOWN = 1;
+    SITE = (0, 2);
+
+    out I = a;
+}
+
+cell inv : LUT4 {
+    LUT = 0xFF00;
+    SLOT = LE1;
+    SITE = (1, 2);
+
+    in A = a;
+    out O = y;
+}
+
+cell pad_y : IO {
+    PIN = 3;
+    SITE = (0, 3);
+
+    in O = y;
+    in E = 1;
+}
+
+net a {
+    route {
+        switch (0, 2): W.L1[0] = NW.I;
+        logic (1, 2): in A1 = N[L].L1[0];
+    }
+}
+
+net y {
+    route {
+        switch (0, 2): E.L1[0] = SW.O1A;
+        io (0, 3): in O = S[R].L1[0];
+    }
+}

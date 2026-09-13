@@ -19,6 +19,9 @@ pub fn build(b: *std.Build) void {
         .{ "toggle_mica", "examples/toggle.mica" },
         .{ "toggle_bit", "examples/toggle.bit" },
         .{ "bram_dsp_mica", "examples/bram_dsp.mica" },
+        .{ "inverter_mnl", "examples/inverter.mnl" },
+        .{ "toggle_mnl", "examples/toggle.mnl" },
+        .{ "bram_dsp_mnl", "examples/bram_dsp.mnl" },
     }) |fixture| {
         core.addAnonymousImport(fixture[0], .{ .root_source_file = b.path(fixture[1]) });
     }

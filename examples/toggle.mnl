@@ -1,0 +1,55 @@
+format 1;
+device "M1/S";
+design "toggle";
+
+pass synth "mica-synth 0.1";
+pass techmap "mica-map 0.1";
+pass pack "mica-pack 0.1";
+pass place "mica-place 0.1";
+pass route "mica-route 0.1";
+
+net clk : clock;
+net d;
+net q;
+
+cell inv : LUT4 {
+    LUT = 0xFF00;
+    PACK = toggle;
+    SLOT = LE1;
+    SITE = (1, 2);
+
+    in A = q;
+    out O = d;
+}
+
+cell ff : FF {
+    PACK = toggle;
+    SLOT = LE1;
+    SITE = (1, 2);
+
+    in CLK = clk;
+    in D = d;
+    in E = 1;
+    out Q = q;
+}
+
+cell pad_q : IO {
+    PIN = 3;
+    SITE = (0, 3);
+
+    in O = q;
+    in E = 1;
+}
+
+net clk : clock {
+    CLK = 0;
+    PIN = 1;
+}
+
+net q {
+    route {
+        switch (0, 2): E.L1[0] = SW.O1A;
+        logic (1, 2): in A1 = O1A;
+        io (0, 3): in O = S[R].L1[0];
+    }
+}
