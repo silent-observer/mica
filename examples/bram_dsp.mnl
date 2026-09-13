@@ -11,12 +11,10 @@ pass place "mica-place 0.1";
 net clk : clock;
 net rst : reset;
 net we;
-net a[0];
-net a[1];
+net a[0..1];
 net d[0];
 net q[0];
-net p[0];
-net p[1];
+net p[0..1];
 net h;
 net m;
 net s;
@@ -34,8 +32,7 @@ cell store : BRAM {
     SITE = (25, 38);
 
     in CLK = clk;
-    in ADDR[0] = a[0];
-    in ADDR[1] = a[1];
+    in ADDR[0..1] = a[0..1];
     in DI[0] = d[0];
     in WE = we;
     out DO[0] = q[0];
@@ -50,10 +47,8 @@ cell table : $rom {
         F: FFF;
     }
 
-    in A[0] = a[0];
-    in A[1] = a[1];
-    in A[2] = 0;
-    in A[3] = 0;
+    in A[0..1] = a[0..1];
+    in A[2..3] = 0;
 }
 
 cell mul : DSP {
@@ -63,8 +58,7 @@ cell mul : DSP {
 
     in A[0] = q[0];
     in B[0] = d[0];
-    out O[0] = p[0];
-    out O[1] = p[1];
+    out O[0..1] = p[0..1];
 }
 
 cell sum : LUT4 {
@@ -111,8 +105,7 @@ cell acc : MEM {
     SITE = (2, 8);
 
     in CLK = clk;
-    in ADDR[0] = a[0];
-    in ADDR[1] = a[1];
+    in ADDR[0..1] = a[0..1];
     in DI = h;
     in WE = we;
     out DO = m;

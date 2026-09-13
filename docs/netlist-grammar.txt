@@ -39,7 +39,9 @@ PassName = 'synth' | 'opt' | 'techmap' | 'pack' | 'place' | 'route'
 
 // Blocks
 // When dumping to text: net declarations first, then cells, then nets
-// Order in each section is irrelevant, but preserved
+// Order in each section is irrelevant. Dumping preserves the order base names
+// were first mentioned in, but gathers each name's nets together in index
+// order so that a bus can be written as one range, however it was declared.
 Block =
   NetDecl
 | Cell

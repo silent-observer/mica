@@ -57,6 +57,221 @@ test "golden: the examples are the canonical form of themselves" {
     }
 }
 
+/// `header ++ "\n" ++ body` is what the emitter writes for a netlist with no
+/// passes and no file metadata, so a case can state just the body.
+const header = "format 1;\ndevice \"M1/S\";\ndesign \"t\";\n";
+
+test "consolidation: a bus folds as far as one line can spell it" {
+    const Case = struct { src: []const u8, want: []const u8 };
+    for ([_]Case{
+        // Declarations gather by name however they arrive, since a later pass
+        // may append to a bus long after it was first declared.
+        .{
+            .src =
+            \\net a[0];
+            \\net b;
+            \\net a[1];
+            \\
+            ,
+            .want =
+            \\net a[0..1];
+            \\net b;
+            \\
+            ,
+        },
+        // A kind is part of the declaration, so it splits one.
+        .{
+            .src =
+            \\net a[0] : clock;
+            \\net a[1];
+            \\
+            ,
+            .want =
+            \\net a[0] : clock;
+            \\net a[1];
+            \\
+            ,
+        },
+        // Ports: a run of nets, a run of constants, and a bit that is neither.
+        // ADDR[2..3] cannot join a[0..1], and a[3] cannot join the constants.
+        .{
+            .src =
+            \\net a[0..3];
+            \\
+            \\cell m : MEM {
+            \\    in ADDR[0] = a[0];
+            \\    in ADDR[1] = a[1];
+            \\    in ADDR[2] = 0;
+            \\    in ADDR[3] = 0;
+            \\    in ADDR[4] = a[3];
+            \\}
+            \\
+            ,
+            .want =
+            \\net a[0..3];
+            \\
+            \\cell m : MEM {
+            \\    in ADDR[0..1] = a[0..1];
+            \\    in ADDR[2..3] = 0;
+            \\    in ADDR[4] = a[3];
+            \\}
+            \\
+            ,
+        },
+        // One net over several bits is the broadcast spelling, and a group
+        // written that way holds more bits than nets - so the bit after it
+        // starts a new line rather than extending a[0] into a[0..1].
+        .{
+            .src =
+            \\net a[0..1];
+            \\
+            \\cell m : MEM {
+            \\    in ADDR[0] = a[0];
+            \\    in ADDR[1] = a[0];
+            \\    in ADDR[2] = a[1];
+            \\}
+            \\
+            ,
+            .want =
+            \\net a[0..1];
+            \\
+            \\cell m : MEM {
+            \\    in ADDR[0..1] = a[0];
+            \\    in ADDR[2] = a[1];
+            \\}
+            \\
+            ,
+        },
+        // Ranges only ever ascend, so a bit-reversed bus stays apart.
+        .{
+            .src =
+            \\net a[0..1];
+            \\
+            \\cell m : MEM {
+            \\    in ADDR[0] = a[1];
+            \\    in ADDR[1] = a[0];
+            \\}
+            \\
+            ,
+            .want =
+            \\net a[0..1];
+            \\
+            \\cell m : MEM {
+            \\    in ADDR[0] = a[1];
+            \\    in ADDR[1] = a[0];
+            \\}
+            \\
+            ,
+        },
+        // A two-dimensional port folds its rows first and then folds the rows
+        // together, which leaves the flat bus feeding it on the other side.
+        .{
+            .src =
+            \\net d[0..3];
+            \\
+            \\cell m : $mux {
+            \\    WIDTH = 2;
+            \\    DEPTH = 1;
+            \\
+            \\    in IN[0][0] = d[0];
+            \\    in IN[0][1] = d[1];
+            \\    in IN[1][0] = d[2];
+            \\    in IN[1][1] = d[3];
+            \\}
+            \\
+            ,
+            .want =
+            \\net d[0..3];
+            \\
+            \\cell m : $mux {
+            \\    WIDTH = 2;
+            \\    DEPTH = 1;
+            \\
+            \\    in IN[0..1][0..1] = d[0..3];
+            \\}
+            \\
+            ,
+        },
+        // Row 1 runs backwards, so it stays in single bits - and row 0, having
+        // already folded, no longer has a partner its own shape to join.
+        .{
+            .src =
+            \\net d[0..1];
+            \\
+            \\cell m : $mux {
+            \\    WIDTH = 2;
+            \\    DEPTH = 1;
+            \\
+            \\    in IN[0][0] = d[0];
+            \\    in IN[0][1] = d[1];
+            \\    in IN[1][0] = d[1];
+            \\    in IN[1][1] = d[0];
+            \\}
+            \\
+            ,
+            .want =
+            \\net d[0..1];
+            \\
+            \\cell m : $mux {
+            \\    WIDTH = 2;
+            \\    DEPTH = 1;
+            \\
+            \\    in IN[0][0..1] = d[0..1];
+            \\    in IN[1][0] = d[1];
+            \\    in IN[1][1] = d[0];
+            \\}
+            \\
+            ,
+        },
+        // Net blocks are written in the order the declarations were, so a
+        // block cannot end up on the far side of the file from its bus.
+        .{
+            .src =
+            \\net a[0];
+            \\net b;
+            \\net a[1];
+            \\
+            \\net b { @second 1; }
+            \\net a[1] { @first 1; }
+            \\
+            ,
+            .want =
+            \\net a[0..1];
+            \\net b;
+            \\
+            \\net a[1] {
+            \\    @first 1;
+            \\}
+            \\
+            \\net b {
+            \\    @second 1;
+            \\}
+            \\
+            ,
+        },
+    }) |case| {
+        const src = try std.mem.concat(alloc, u8, &.{ header, "\n", case.src });
+        defer alloc.free(src);
+        const want = try std.mem.concat(alloc, u8, &.{ header, "\n", case.want });
+        defer alloc.free(want);
+
+        const r = try parse(case.src, src);
+        defer r.deinit(alloc);
+        const t = try emit(case.src, r);
+        defer t.deinit(alloc);
+        try std.testing.expectEqualStrings(want, t.text);
+
+        // The folded spelling has to mean what the expanded one did, or the
+        // emitter would be writing a file that reads back as a different
+        // netlist. Emitting it again is how that shows up.
+        const again = try parse(case.want, t.text);
+        defer again.deinit(alloc);
+        const again_text = try emit(case.want, again);
+        defer again_text.deinit(alloc);
+        try std.testing.expectEqualStrings(want, again_text.text);
+    }
+}
+
 test "a netlist survives a second round trip unchanged" {
     // The golden test only says the emitter reproduces its input. This says
     // the text it wrote parses back to the same netlist, which catches an

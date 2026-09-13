@@ -8,6 +8,7 @@ const std = @import("std");
 const common = @import("../common.zig");
 const wire_codes = @import("../wire_codes.zig");
 const Netlist = @import("Netlist.zig");
+const Indexes = @import("Indexes.zig");
 const MemData = @import("MemData.zig");
 const ports = @import("ports.zig");
 const cell_type = @import("cell_type.zig");
@@ -18,6 +19,7 @@ nl: *const Netlist,
 alloc: std.mem.Allocator,
 w: std.Io.Writer.Allocating,
 indent: []const u8,
+sorted_nets: []Netlist.Net.Ref,
 
 warnings: std.ArrayList([]const u8),
 
@@ -40,6 +42,7 @@ fn init(nl: *const Netlist, alloc: std.mem.Allocator) NetlistEmitter {
         .nl = nl,
         .warnings = .empty,
         .indent = "",
+        .sorted_nets = &.{},
     };
 }
 
@@ -97,13 +100,72 @@ fn emitHeader(e: *NetlistEmitter) !void {
     }
 }
 
-fn emitNetDecl(e: *NetlistEmitter, net: *const Netlist.Net) !void {
-    const w = &e.w.writer;
-    try w.print("net {f}", .{net.fmt(e.nl)});
-    if (net.kind != .net) {
-        try w.print(" : {s}", .{@tagName(net.kind)});
+/// Folds a list of one-element groups into as few as adjacent merging can
+/// reach: `mergeInto` grows `a` by `b` and says whether the two tile, and each
+/// pass compacts what is left of the list in place. A pass that merges nothing
+/// ends it, and every other pass shortens the list, so it terminates - one pass
+/// per dimension in practice, since a row has to be whole before the row below
+/// can join it.
+///
+/// Greedy and left to right, so not always the fewest groups possible - but it
+/// is a function of the netlist alone, which is what the canonical form needs.
+fn mergeAdjacent(
+    comptime Group: type,
+    groups: []Group,
+    comptime mergeInto: fn (*Group, Group) bool,
+) []Group {
+    var list = groups;
+    while (list.len > 1) {
+        var kept: usize = 0;
+        for (list[1..]) |group| {
+            if (mergeInto(&list[kept], group)) continue;
+            kept += 1;
+            list[kept] = group;
+        }
+        if (kept + 1 == list.len) break;
+        list = list[0 .. kept + 1];
     }
-    try w.writeAll(";\n");
+    return list;
+}
+
+const NetGroup = struct {
+    name: Netlist.Net.BaseId,
+    kind: Netlist.Net.Kind,
+    range: Indexes.Range,
+
+    fn mergeInto(a: *NetGroup, b: NetGroup) bool {
+        if (a.name != b.name or a.kind != b.kind) return false;
+        a.range = a.range.concat(b.range) orelse return false;
+        return true;
+    }
+};
+
+fn emitNetDecls(e: *NetlistEmitter) !void {
+    var groups = std.ArrayList(NetGroup)
+        .initCapacity(e.alloc, e.sorted_nets.len) catch common.oom();
+    defer groups.deinit(e.alloc);
+
+    // One group per net to start with
+    for (e.sorted_nets) |ref| {
+        const net = e.nl.getNet(ref);
+        groups.appendAssumeCapacity(.{
+            .name = net.name,
+            .kind = net.kind,
+            .range = .single(net.indexes),
+        });
+    }
+
+    const w = &e.w.writer;
+    for (mergeAdjacent(NetGroup, groups.items, NetGroup.mergeInto)) |g| {
+        try w.print("net {s}{f}", .{
+            e.nl.net_base_names.get(g.name),
+            g.range,
+        });
+        if (g.kind != .net) {
+            try w.print(" : {s}", .{@tagName(g.kind)});
+        }
+        try w.writeAll(";\n");
+    }
 }
 
 /// A blank line between two sections of a block body, `body_start` being the
@@ -385,9 +447,111 @@ fn hasPorts(e: *const NetlistEmitter, cell: *const Netlist.Cell) bool {
     return false;
 }
 
-/// One line per port bit. The grammar can compress a bus into `DI[0..3]`, but
-/// only when the nets on the other side are contiguous too, so the canonical
-/// form leaves them apart.
+const PortGroup = struct {
+    port_range: Indexes.Range,
+    /// The first bit's binding, which is every bit's binding while `uniform`.
+    ref: Netlist.Net.Ref,
+    uniform: bool,
+    net: ?NetSource,
+
+    const NetSource = struct {
+        base: Netlist.Net.BaseId,
+        range: Indexes.Range,
+    };
+
+    fn mergeInto(a: *PortGroup, b: PortGroup) bool {
+        const port_range = a.port_range.concat(b.port_range) orelse return false;
+
+        // One net driving both boxes drives the union of them
+        if (a.uniform and b.uniform and a.ref == b.ref) {
+            a.port_range = port_range;
+            a.net = null;
+            return true;
+        }
+
+        // Otherwise the nets have to tile the way the port bits do
+        const a_net = a.net orelse return false;
+        const b_net = b.net orelse return false;
+        if (a_net.base != b_net.base) return false;
+        const range = a_net.range.concat(b_net.range) orelse return false;
+
+        a.port_range = port_range;
+        a.net = .{ .base = a_net.base, .range = range };
+        a.uniform = false;
+        return true;
+    }
+};
+
+fn emitCellPortRanges(
+    e: *NetlistEmitter,
+    entry: ports.Entry,
+    lookup: ports.LookupTable.PerPort,
+    net_refs: []const Netlist.Net.Ref,
+) !void {
+    const w = &e.w.writer;
+    // Fast path for single-wire ports
+    if (lookup.count == 1) {
+        const net_ref = net_refs[0];
+        if (net_ref != .none)
+            try w.print("{s}{s} {s}{f} = {f};\n", .{
+                e.indent,
+                @tagName(entry.kind),
+                entry.name,
+                lookup.full_range.base(),
+                net_ref.fmt(e.nl),
+            });
+        return;
+    }
+
+    var groups = std.ArrayList(PortGroup)
+        .initCapacity(e.alloc, net_refs.len) catch common.oom();
+    defer groups.deinit(e.alloc);
+
+    // Fill groups from nets we're trying to assign, one group per net
+    var iter = lookup.full_range.iterator();
+    var idx: usize = 0;
+    while (iter.next()) |port_indexes| : (idx += 1) {
+        const net_ref = net_refs[idx];
+        // Skip unassigned ports
+        if (net_ref == .none) continue;
+
+        groups.appendAssumeCapacity(.{
+            .port_range = .single(port_indexes),
+            .ref = net_ref,
+            .uniform = true,
+            // Only actual nets get ranges, not constant ones
+            .net = if (net_ref == .zero or net_ref == .one) null else blk: {
+                const net = e.nl.getNet(net_ref);
+                break :blk .{ .base = net.name, .range = .single(net.indexes) };
+            },
+        });
+    }
+
+    if (groups.items.len == 0) return;
+
+    // Emit all the groups
+    for (mergeAdjacent(PortGroup, groups.items, PortGroup.mergeInto)) |g| {
+        try w.print("{s}{s} {s}{f} = ", .{
+            e.indent,
+            @tagName(entry.kind),
+            entry.name,
+            g.port_range,
+        });
+        if (g.uniform) {
+            try w.print("{f};\n", .{g.ref.fmt(e.nl)});
+        } else {
+            const net = g.net.?;
+            try w.print("{s}{f};\n", .{
+                e.nl.net_base_names.get(net.base),
+                net.range,
+            });
+        }
+    }
+}
+
+/// One line per run of port bits that a single line can spell: `DI[0..3]`
+/// needs the nets on the other side to be contiguous too, so how far a port
+/// folds is decided per port by `emitCellPortRanges`.
 fn emitCellPorts(e: *NetlistEmitter, name: []const u8, cell: *const Netlist.Cell) !void {
     const w = &e.w.writer;
 
@@ -423,19 +587,11 @@ fn emitCellPorts(e: *NetlistEmitter, name: []const u8, cell: *const Netlist.Cell
                 }
 
                 for (entry.entries, lookup.ports[0..entry.entries.len]) |port, port_lookup| {
-                    var iter = port_lookup.full_range.iterator();
-                    var i: u16 = 0;
-                    while (iter.next()) |indexes| : (i += 1) {
-                        const net_ref = e.nl.getCellPort(cell, port_lookup.base + i).*;
-                        if (net_ref == .none) continue;
-                        try w.print("{s}{s} {s}{f} = {f};\n", .{
-                            e.indent,
-                            @tagName(port.kind),
-                            port.name,
-                            indexes,
-                            net_ref.fmt(e.nl),
-                        });
-                    }
+                    try e.emitCellPortRanges(
+                        port,
+                        port_lookup,
+                        e.nl.getCellPorts(cell, port_lookup.base, port_lookup.count),
+                    );
                 }
             },
         },
@@ -495,16 +651,50 @@ fn emitCell(e: *NetlistEmitter, ref: Netlist.Cell.Ref) !void {
     try w.writeAll("}\n");
 }
 
+fn fillSortedNets(e: *NetlistEmitter) void {
+    e.sorted_nets = e.alloc.alloc(Netlist.Net.Ref, e.nl.nets.items.len) catch common.oom();
+    for (0..e.sorted_nets.len) |i|
+        e.sorted_nets[i] = @enumFromInt(i);
+
+    const Cxt = struct {
+        nl: *const Netlist,
+
+        fn lessThan(cxt: @This(), a: Netlist.Net.Ref, b: Netlist.Net.Ref) bool {
+            const a_net = cxt.nl.getNet(a);
+            const b_net = cxt.nl.getNet(b);
+
+            if (@intFromEnum(a_net.name) < @intFromEnum(b_net.name))
+                return true;
+            if (@intFromEnum(a_net.name) > @intFromEnum(b_net.name))
+                return false;
+
+            if (a_net.indexes.n < b_net.indexes.n)
+                return true;
+            if (a_net.indexes.n > b_net.indexes.n)
+                return false;
+
+            const ord = std.mem.order(u16, a_net.indexes.slice(), b_net.indexes.slice());
+            return ord.compare(.lt);
+        }
+    };
+
+    std.sort.pdq(
+        Netlist.Net.Ref,
+        e.sorted_nets,
+        Cxt{ .nl = e.nl },
+        Cxt.lessThan,
+    );
+}
+
 /// Blocks are separated by a blank line rather than followed by one, so the
 /// text ends with the closing brace of the last block.
 fn emitAll(e: *NetlistEmitter) !void {
     const w = &e.w.writer;
     try e.emitHeader();
 
-    if (e.nl.nets.items.len != 0) {
+    if (e.sorted_nets.len != 0) {
         try w.writeByte('\n');
-        for (e.nl.nets.items) |*net|
-            try e.emitNetDecl(net);
+        try e.emitNetDecls();
     }
 
     for (0..e.nl.cells.items.len) |i| {
@@ -512,7 +702,10 @@ fn emitAll(e: *NetlistEmitter) !void {
         try e.emitCell(@enumFromInt(i));
     }
 
-    for (e.nl.nets.items) |*net| {
+    // Same order as the declarations above, so the two halves of the file
+    // agree about where a net sits.
+    for (e.sorted_nets) |ref| {
+        const net = e.nl.getNet(ref);
         if (!hasBody(net)) continue;
         try w.writeByte('\n');
         try e.emitNet(net);
@@ -521,6 +714,8 @@ fn emitAll(e: *NetlistEmitter) !void {
 
 pub fn emit(nl: *const Netlist, alloc: std.mem.Allocator) Result {
     var e = NetlistEmitter.init(nl, alloc);
+    e.fillSortedNets();
+    defer alloc.free(e.sorted_nets);
     // The only way an `Allocating` writer fails is running out of memory.
     e.emitAll() catch common.oom();
 

@@ -218,3 +218,8 @@ pub fn getCellPort(self: *const Netlist, cell: *const Cell, index: u32) *Net.Ref
     std.debug.assert(index < cell.ports_len);
     return &self.port_nets.items[cell.ports_start + index];
 }
+
+pub fn getCellPorts(self: *const Netlist, cell: *const Cell, start: u32, len: u32) []const Net.Ref {
+    std.debug.assert(start + len <= cell.ports_len);
+    return self.port_nets.items[cell.ports_start + start ..][0..len];
+}
