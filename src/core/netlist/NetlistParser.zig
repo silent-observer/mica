@@ -119,9 +119,43 @@ pub fn parse(input: []const u8, alloc: std.mem.Allocator) Result {
     };
 }
 
+const test_header = "format 1;\ndevice \"M1/S\";\ndesign \"t\";\n";
+
+const Case = struct { src: []const u8, want: ?[]const u8 };
+
+/// Parses `test_header ++ case.src` and checks it fails with `want` somewhere
+/// in the message, or parses cleanly when `want` is null.
+fn expectCases(cases: []const Case) !void {
+    for (cases) |case| {
+        const src = try std.mem.concat(
+            std.testing.allocator,
+            u8,
+            &.{ test_header, case.src },
+        );
+        defer std.testing.allocator.free(src);
+
+        const r = parse(src, std.testing.allocator);
+        defer r.deinit(std.testing.allocator);
+
+        if (case.want) |want| {
+            if (r.err == null or std.mem.indexOf(u8, r.err.?, want) == null) {
+                std.debug.print("{s}\nexpected an error containing '{s}', got '{?s}'\n", .{
+                    case.src,
+                    want,
+                    r.err,
+                });
+                return error.TestUnexpectedResult;
+            }
+        } else {
+            if (r.err) |e|
+                std.debug.print("{s}\n{s}\n", .{ case.src, e });
+            try std.testing.expectEqual(@as(?[]const u8, null), r.err);
+        }
+    }
+}
+
 test "net kind is fixed at first mention" {
-    const header = "format 1;\ndevice \"M1/S\";\ndesign \"t\";\n";
-    const cases = [_]struct { src: []const u8, want: ?[]const u8 }{
+    try expectCases(&.{
         // A kind may be restated as long as it agrees, in either order.
         .{ .src = "net a : clock;\nnet a {}\n", .want = null },
         .{ .src = "net a : clock;\nnet a : clock {}\n", .want = null },
@@ -136,26 +170,99 @@ test "net kind is fixed at first mention" {
             .src = "net a;\nnet a : clock {}\n",
             .want = "was already defined earlier as 'net'",
         },
-    };
+    });
+}
 
-    for (cases) |case| {
-        const src = try std.mem.concat(
-            std.testing.allocator,
-            u8,
-            &.{ header, case.src },
-        );
-        defer std.testing.allocator.free(src);
+test "data blocks are shaped by the cell's parameters" {
+    try expectCases(&.{
+        // WIDTH = 8 divides the tile's 4096 bits into 512 entries, so the
+        // address range is 0x000..0x1FF and a value is two hex digits.
+        .{ .src = "cell m : BRAM { WIDTH = 8; data { 000: 77 24 5D; } }\n", .want = null },
+        .{
+            .src = "cell m : BRAM { WIDTH = 8; data { 200: 77; } }\n",
+            .want = "addresses only go up to 0x1FF",
+        },
+        .{
+            .src = "cell m : BRAM { WIDTH = 8; data { 000: 1FF; } }\n",
+            .want = "Memory values are 8 bits wide, '1FF' does not fit",
+        },
+        // A run walks the address forward, so it can also walk off the end.
+        .{
+            .src = "cell m : BRAM { WIDTH = 16; data { 0FE: 1 2 3; } }\n",
+            .want = "addresses only go up to 0xFF",
+        },
+        // The shape comes from the parameters, so they have to be known first.
+        .{
+            .src = "cell m : BRAM { data { 000: 77; } WIDTH = 8; }\n",
+            .want = "WIDTH must be specified before 'data'",
+        },
+        .{
+            .src = "cell r : $rom { DATA_WIDTH = 8; data { 0: 77; } }\n",
+            .want = "ADDR_WIDTH must be specified before 'data'",
+        },
+        .{ .src = "cell m : LUT4 { LUT = 0; }\n", .want = null },
+        .{
+            .src = "cell m : LUT4 { data { 0: 1; } }\n",
+            .want = "Cell 'LUT4' cannot have initial data",
+        },
+        // A logical memory is not bounded by a tile, so it needs its own cap.
+        .{ .src = "cell r : $rom { DATA_WIDTH = 12; ADDR_WIDTH = 4; data { 0: FFF; } }\n", .want = null },
+        .{
+            .src = "cell r : $rom { DATA_WIDTH = 12; ADDR_WIDTH = 4; data { 0: 1000; } }\n",
+            .want = "Memory values are 12 bits wide, '1000' does not fit",
+        },
+        .{
+            .src = "cell r : $ram { DATA_WIDTH = 8; ADDR_WIDTH = 30; data { 0: 1; } }\n",
+            .want = "ADDR_WIDTH = 30, the limit is 24",
+        },
+        // Later blocks union in, on the same "restate freely, contradict
+        // never" rule as parameters and port bindings.
+        .{
+            .src = "cell m : BRAM { WIDTH = 8; data { 000: 77; } }\n" ++
+                "cell m { data { 000: 77; 001: 24; } }\n",
+            .want = null,
+        },
+        .{
+            .src = "cell m : BRAM { WIDTH = 8; data { 000: 77; } }\n" ++
+                "cell m { data { 000: 78; } }\n",
+            .want = "address 0x0 was already written before",
+        },
+    });
+}
 
-        const r = parse(src, std.testing.allocator);
-        defer r.deinit(std.testing.allocator);
+test "data entries are stored big-endian in fixed-size slots" {
+    const src = test_header ++
+        \\cell r : $rom {
+        \\    DATA_WIDTH = 12;
+        \\    ADDR_WIDTH = 4;
+        \\    data {
+        \\        0: ABC 007;
+        \\        F: FFF;
+        \\    }
+        \\}
+        \\
+    ;
 
-        if (case.want) |want| {
-            try std.testing.expect(r.err != null);
-            try std.testing.expect(std.mem.indexOf(u8, r.err.?, want) != null);
-        } else {
-            if (r.err) |e|
-                std.debug.print("{s}\n", .{e});
-            try std.testing.expectEqual(@as(?[]const u8, null), r.err);
-        }
-    }
+    const r = parse(src, std.testing.allocator);
+    defer r.deinit(std.testing.allocator);
+    if (r.err) |e| std.debug.print("{s}\n", .{e});
+    try std.testing.expectEqual(@as(?[]const u8, null), r.err);
+
+    const netlist = r.netlist.?;
+    const data = &netlist.getCell(netlist.cell_names.find("r").?).data.?;
+
+    try std.testing.expectEqual(@as(u16, 2), data.stride());
+    try std.testing.expectEqual(@as(u32, 16), data.depth);
+
+    // 12 bits right-aligned in two bytes: the padding nibble is the top of
+    // byte 0, and the hex reads straight across the slot.
+    try std.testing.expectEqualSlices(u8, &.{ 0x0A, 0xBC }, data.constSlot(0));
+    try std.testing.expectEqualSlices(u8, &.{ 0x00, 0x07 }, data.constSlot(1));
+    try std.testing.expectEqual(@as(u16, 0xFFF), data.get(u16, 15));
+
+    // A run advances the address; everything else is unwritten, and unwritten
+    // is distinguishable from a written zero.
+    try std.testing.expect(data.isSet(1));
+    try std.testing.expect(!data.isSet(2));
+    try std.testing.expectEqual(@as(u16, 0), data.get(u16, 2));
 }

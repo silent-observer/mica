@@ -101,7 +101,7 @@ fn parseCommands(
 ) !void {
     try p.p.expect('{');
 
-    var bram_width: ?u16 = null;
+    var bram_width: ?u8 = null;
     outer: while (!p.p.check('}')) {
         const word = try p.p.parseWord();
         if (std.mem.eql(u8, word, "in")) {
@@ -160,7 +160,7 @@ fn parseCommands(
                                 bram_width = 16;
                                 @field(cfg.*, f.field) = @enumFromInt(x);
                             } else {
-                                const x = try p.p.parseNumber(u16);
+                                const x = try p.p.parseNumber(u8);
                                 const width_val: common.BramWidth = switch (x) {
                                     1 => .w1,
                                     2 => .w2,
@@ -231,32 +231,13 @@ fn parseCommands(
                             if (bram_width == null)
                                 try p.p.err("In BRAM block, WIDTH must be specified before data", .{});
                             const data_width = bram_width.?;
-                            const addr_depth = 4096 / data_width;
-                            try p.p.expect('{');
+                            // A tile is 4096 bits however WIDTH divides it up,
+                            // so the address range shrinks as entries widen.
+                            const addr_top = @as(u16, 4096) / data_width;
+                            const addr_width: u8 = @intCast(std.math.log2_int(u16, addr_top));
                             const data = p.config.?.getBramData(tile);
-                            while (!p.p.check('}')) {
-                                var addr = try p.p.parseHexNumber(u16);
 
-                                try p.p.expect(':');
-                                while (!p.p.check(';')) {
-                                    if (addr >= addr_depth)
-                                        try p.p.err(
-                                            "If WIDTH={}, BRAM addresses only go up to 0x{X}, 0x{X} is outside that range",
-                                            .{ data_width, addr_depth - 1, addr },
-                                        );
-                                    switch (data_width) {
-                                        1 => data.set(u1, addr, try p.p.parseHexNumber(u1)),
-                                        2 => data.set(u2, addr, try p.p.parseHexNumber(u2)),
-                                        4 => data.set(u4, addr, try p.p.parseHexNumber(u4)),
-                                        8 => data.set(u8, addr, try p.p.parseHexNumber(u8)),
-                                        16 => data.set(u16, addr, try p.p.parseHexNumber(u16)),
-                                        else => unreachable,
-                                    }
-                                    addr += 1;
-                                }
-                                try p.p.expect(';');
-                            }
-                            try p.p.expect('}');
+                            try p.p.parseRamData(addr_width, data_width, data.sink(data_width));
                         },
                     }
 

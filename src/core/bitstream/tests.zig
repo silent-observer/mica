@@ -652,6 +652,20 @@ test "text: errors are reported with a line and column" {
             .text = "format 1;\ndevice \"M1/S\";\nbram (1, 9) { in A1[0] = W0[R].L1[0]; }\n",
             .err = "3:32: Wrong direction W0[R], for the side W0 only up and down are possible",
         },
+        // A tile is 4096 bits however WIDTH divides it up, so the top address
+        // moves with it: 0xFFF at WIDTH = 1, 0xFF at WIDTH = 16.
+        .{
+            .text = "format 1;\ndevice \"M1/S\";\nbram (1, 9) { WIDTH = 1; data { 1000: 1; } }\n",
+            .err = "3:40: Memory addresses only go up to 0xFFF, 0x1000 is outside that range",
+        },
+        .{
+            .text = "format 1;\ndevice \"M1/S\";\nbram (1, 9) { WIDTH = 16; data { 100: 1; } }\n",
+            .err = "3:40: Memory addresses only go up to 0xFF, 0x100 is outside that range",
+        },
+        .{
+            .text = "format 1;\ndevice \"M1/S\";\nbram (1, 9) { WIDTH = 4; data { 000: 1F; } }\n",
+            .err = "3:41: Memory values are 4 bits wide, '1F' does not fit",
+        },
     }) |case| {
         const r = TextParser.parse(case.text, alloc);
         defer r.deinit(alloc);

@@ -3,6 +3,7 @@ const common = @import("../common.zig");
 const Net = @import("Net.zig");
 const Meta = @import("Meta.zig");
 const cell_type = @import("cell_type.zig");
+const MemData = @import("MemData.zig");
 
 pub const Cell = @This();
 
@@ -20,6 +21,10 @@ rst: Net.Ref = .none,
 pack: PackId = .none,
 slot: SlotId = .none,
 site: ?common.TileCoords = null,
+/// Contents of a `data {}` block, for the cell types that can carry one. It
+/// lives here rather than among the parameters because its shape is derived
+/// from them, so it cannot be parsed until they are known.
+data: ?MemData = null,
 meta: Meta.List = .{},
 
 pub const Ref = enum(u32) {

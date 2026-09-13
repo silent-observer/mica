@@ -811,6 +811,22 @@ pub const BramWidth = enum(u3) {
     }
 };
 
+/// Limits on a `data {}` memory. A BRAM tile is always 4096 bits, but a
+/// logical `$rom`/`$ram` names its shape with `ADDR_WIDTH`/`DATA_WIDTH`, both
+/// `u16` - so `1 << ADDR_WIDTH` entries is not a size anything can allocate.
+/// These bound it to something a plausible file can ask for, and anything
+/// past them is a parse error rather than an allocation attempt.
+pub const mem_max_addr_width = 24;
+pub const mem_max_data_width = 1024;
+pub const mem_max_bytes = 16 << 20;
+
+/// Bytes one entry of `data_width` bits occupies in a slot. This is the layout
+/// `CommonParser.parseRamData` hands values over in and the one the netlist's
+/// `MemData` stores them in, so it lives here rather than in either.
+pub fn memStride(data_width: u16) u16 {
+    return (data_width + 7) / 8;
+}
+
 pub const BIG_TILE_HEIGHT = 4;
 
 pub const BigEdge = enum {

@@ -3,6 +3,7 @@ const std = @import("std");
 const common = @import("../common.zig");
 const NetlistParser = @import("NetlistParser.zig");
 const Cell = @import("Cell.zig");
+const MemData = @import("MemData.zig");
 const Net = @import("Net.zig");
 const cell_type = @import("cell_type.zig");
 const ports = @import("ports.zig");
@@ -51,6 +52,55 @@ fn getPortsLookupTable(p: *NetlistParser, cell_ref: Cell.Ref) !ports.LookupTable
                     "before input/output ports in the cell", .{}),
         },
     };
+}
+
+const MemShape = struct { data_width: u16, addr_width: u8 };
+
+/// A `data {}` block is shaped by the cell's own parameters, which is why the
+/// grammar makes them precede it. A `BRAM` takes its shape from `WIDTH`, since
+/// the tile is 4096 bits however that divides it up; the logical memories say
+/// it outright and are not bounded by any one tile.
+fn memShape(p: *NetlistParser, cell: *const Cell) !MemShape {
+    switch (cell.params) {
+        .physical => |params_union| switch (params_union) {
+            .bram, .bram_dual => |params| {
+                const data_width = (params.width orelse try p.p.err(
+                    "WIDTH must be specified before 'data' in a '{f}' cell",
+                    .{cell.cellType()},
+                )).int();
+                return .{
+                    .data_width = data_width,
+                    .addr_width = @intCast(std.math.log2_int(u16, 4096 / data_width)),
+                };
+            },
+            else => {},
+        },
+        .logical => |params_union| switch (params_union) {
+            .rom, .rom_dual, .ram, .ram_dual => |params| {
+                const data_width = params.data_width orelse try p.p.err(
+                    "DATA_WIDTH must be specified before 'data' in a '{f}' cell",
+                    .{cell.cellType()},
+                );
+                const addr_width = params.addr_width orelse try p.p.err(
+                    "ADDR_WIDTH must be specified before 'data' in a '{f}' cell",
+                    .{cell.cellType()},
+                );
+                if (addr_width > common.mem_max_addr_width)
+                    try p.p.err(
+                        "Cannot declare a memory with ADDR_WIDTH = {}, the limit is {}",
+                        .{ addr_width, common.mem_max_addr_width },
+                    );
+                if (data_width == 0 or data_width > common.mem_max_data_width)
+                    try p.p.err(
+                        "Cannot declare a memory with DATA_WIDTH = {}, the limit is {}",
+                        .{ data_width, common.mem_max_data_width },
+                    );
+                return .{ .data_width = data_width, .addr_width = @intCast(addr_width) };
+            },
+            else => {},
+        },
+    }
+    try p.p.err("Cell '{f}' cannot have initial data", .{cell.cellType()});
 }
 
 const slots_table: std.StaticStringMap(Cell.SlotId) = .initComptime(.{
@@ -156,6 +206,26 @@ fn parseCommonCellCommand(
                 .{@tagName(cell.slot)},
             );
         cell.slot = new_slot;
+    } else if (std.mem.eql(u8, word, "data")) {
+        const shape = try memShape(p, cell);
+
+        // A repeat block for the same cell unions into the memory it already
+        // has, so the per-address check in `setSlot` sees the earlier values.
+        if (cell.data == null)
+            cell.data = MemData.init(
+                p.nl().arena.allocator(),
+                shape.data_width,
+                shape.addr_width,
+            ) catch try p.p.err(
+                "A {} x {}-bit memory needs more than the {} bytes a 'data' block may use",
+                .{
+                    @as(u64, 1) << @intCast(shape.addr_width),
+                    shape.data_width,
+                    common.mem_max_bytes,
+                },
+            );
+
+        try p.p.parseRamData(shape.addr_width, shape.data_width, &cell.data.?);
     } else if (std.mem.eql(u8, word, "SITE")) {
         try p.p.expect('=');
         const new_site = try p.p.parseTileCoords(&p.nl().model);

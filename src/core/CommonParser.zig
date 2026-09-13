@@ -607,3 +607,99 @@ pub fn parseInputCommand(
         .{ input_word, @tagName(t) },
     );
 }
+
+/// Parses one hex literal of a `data {}` entry into `slot`, right-aligned and
+/// big-endian, so the padding bits land in the high bits of `slot[0]`. Both
+/// formats are big-endian throughout, which is what lets a sink keeping
+/// entries in this layout store them without shifting.
+///
+/// Leading zeroes are free; a non-zero digit above `data_width` is an error,
+/// which is the check `parseHexNumber`'s width-typed return used to give.
+fn parseMemSlot(p: *CommonParser, slot: []u8, data_width: u16) !void {
+    p.skipWhitespace();
+    const start = p.pos;
+    while (p.peek(0)) |c| : (p.pos += 1) {
+        if (!std.ascii.isHex(c)) break;
+    }
+    const text = p.input[start..p.pos];
+    if (text.len == 0) {
+        if (p.eof())
+            try p.err("Expected a hex number, but got end of file", .{});
+        try p.err("Expected a hex number, but got '{c}'", .{p.peek(0).?});
+    }
+
+    @memset(slot, 0);
+    // Right to left, so digit `i` from the end is nibble `i` from the end of
+    // the slot regardless of how many digits were written.
+    for (0..text.len) |i| {
+        const digit = std.fmt.charToDigit(text[text.len - 1 - i], 16) catch unreachable;
+        if (digit == 0) continue;
+        if (i >= slot.len * 2)
+            try p.err("Memory values are {} bits wide, '{s}' does not fit", .{ data_width, text });
+        const byte = slot.len - 1 - i / 2;
+        slot[byte] |= if (i % 2 == 0) digit else @as(u8, digit) << 4;
+    }
+
+    // The slot is whole bytes, so a width like 12 leaves padding to check.
+    const pad: u4 = @intCast(slot.len * 8 - data_width);
+    if (pad > 0 and slot[0] >> @intCast(8 - pad) != 0)
+        try p.err("Memory values are {} bits wide, '{s}' does not fit", .{ data_width, text });
+}
+
+/// Parses the body of a `data {}` block: a sparse list of runs, each an
+/// address followed by one value per consecutive address from there.
+///
+/// Values reach `sink.setSlot(addr, bytes)` as a `common.memStride`-byte
+/// big-endian slot, so a sink that stores entries that way can copy them and
+/// one that packs them tighter - the bitstream's `Bram.Data` - can widen
+/// them, without either knowing about the other. `setSlot` returns whether `addr` already
+/// had a value, which the netlist's monotonic-union rule rejects and the
+/// bitstream, having no such rule, never reports.
+pub fn parseRamData(
+    p: *CommonParser,
+    addr_width: u8,
+    data_width: u16,
+    sink: anytype,
+) !void {
+    if (addr_width > common.mem_max_addr_width)
+        try p.err(
+            "Cannot declare a memory with ADDR_WIDTH = {}, the limit is {}",
+            .{ addr_width, common.mem_max_addr_width },
+        );
+    if (data_width == 0 or data_width > common.mem_max_data_width)
+        try p.err(
+            "Cannot declare a memory with DATA_WIDTH = {}, the limit is {}",
+            .{ data_width, common.mem_max_data_width },
+        );
+
+    const addr_top = @as(u32, 1) << @intCast(addr_width);
+    const stride = common.memStride(data_width);
+    var slot: [common.mem_max_data_width / 8]u8 = undefined;
+
+    try p.expect('{');
+    while (!p.check('}')) {
+        var addr = try p.parseHexNumber(u32);
+
+        try p.expect(':');
+        while (!p.check(';')) {
+            // Phrased without naming the parameter: the bitstream spells this
+            // shape `WIDTH` and the netlist `ADDR_WIDTH`, and only the bound
+            // itself is common to both.
+            if (addr >= addr_top)
+                try p.err(
+                    "Memory addresses only go up to 0x{X}, 0x{X} is outside that range",
+                    .{ addr_top - 1, addr },
+                );
+
+            try p.parseMemSlot(slot[0..stride], data_width);
+            if (sink.setSlot(addr, slot[0..stride]))
+                try p.err(
+                    "Memory conflict, address 0x{X} was already written before",
+                    .{addr},
+                );
+            addr += 1;
+        }
+        try p.expect(';');
+    }
+    try p.expect('}');
+}

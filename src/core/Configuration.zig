@@ -91,6 +91,38 @@ pub const Bram = struct {
             data.data[word_idx] = old | new;
         }
 
+        /// Sink for `CommonParser.parseRamData`. The entries arrive in
+        /// big-endian byte slots and get packed back down to `data_width`
+        /// bits, which is the whole difference between this and the netlist's
+        /// `MemData`: a BRAM tile is 4096 bits however it is divided up.
+        ///
+        /// `width` is the plain 1/2/4/8/16, not a `BramWidth`, because an
+        /// out-of-range `WIDTH = code N;` leaves the enum holding a raw code
+        /// while the data is still read as 16 bits wide.
+        pub fn sink(data: *Data, width: u8) Sink {
+            return .{ .data = data, .width = width };
+        }
+
+        pub const Sink = struct {
+            data: *Data,
+            width: u8,
+
+            /// Always false: the bitstream's `data {}` has no union rule, a
+            /// repeated address simply overwrites.
+            pub fn setSlot(s: Sink, addr: u32, bytes: []const u8) bool {
+                const x = std.mem.readVarInt(u16, bytes, .big);
+                switch (s.width) {
+                    1 => s.data.set(u1, addr, @intCast(x)),
+                    2 => s.data.set(u2, addr, @intCast(x)),
+                    4 => s.data.set(u4, addr, @intCast(x)),
+                    8 => s.data.set(u8, addr, @intCast(x)),
+                    16 => s.data.set(u16, addr, x),
+                    else => unreachable,
+                }
+                return false;
+            }
+        };
+
         pub fn getChunk(
             data: *const Data,
             offset: usize,
