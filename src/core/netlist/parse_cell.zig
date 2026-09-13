@@ -109,15 +109,6 @@ fn memShape(p: *NetlistParser, cell: *const Cell) !MemShape {
     try p.p.err("Cell '{f}' cannot have initial data", .{cell.cellType()});
 }
 
-const slots_table: std.StaticStringMap(Cell.SlotId) = .initComptime(.{
-    .{ "LE1", .le1 },
-    .{ "LE2", .le2 },
-    .{ "LE1A", .le1a },
-    .{ "LE2A", .le2a },
-    .{ "LE1B", .le1b },
-    .{ "LE2B", .le2b },
-});
-
 fn parseCommonCellCommand(
     p: *NetlistParser,
     cell_ref: Cell.Ref,
@@ -200,7 +191,7 @@ fn parseCommonCellCommand(
         const slot_word = try p.p.parseWord();
         try p.p.expect(';');
 
-        const new_slot = slots_table.get(slot_word) orelse
+        const new_slot = Cell.SlotId.lookup.get(slot_word) orelse
             try p.p.err(
                 "Invalid slot name: '{s}', only LE[12][AB]? are supported",
                 .{slot_word},

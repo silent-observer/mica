@@ -43,6 +43,33 @@ pub const SlotId = enum {
     le1b,
     le2a,
     le2b,
+
+    pub const names: std.EnumArray(SlotId, []const u8) = blk: {
+        var r: std.EnumArray(SlotId, []const u8) = .initUndefined();
+        for (std.enums.values(SlotId)) |slot| {
+            r.set(slot, common.upper(@tagName(slot)));
+        }
+        break :blk r;
+    };
+
+    pub fn format(
+        self: @This(),
+        writer: *std.Io.Writer,
+    ) std.Io.Writer.Error!void {
+        try writer.print("{s}", .{names.get(self)});
+    }
+
+    pub const lookup: std.StaticStringMap(SlotId) = blk: {
+        const values = std.enums.values(SlotId);
+        var entries: [values.len - 1]struct { []const u8, SlotId } = undefined;
+        var i: usize = 0;
+        for (values) |v| {
+            if (v == .none) continue;
+            entries[i] = .{ names.get(v), v };
+            i += 1;
+        }
+        break :blk std.StaticStringMap(SlotId).initComptime(entries);
+    };
 };
 pub const PackId = enum(u32) {
     none = 0xFFFF_FFFF,

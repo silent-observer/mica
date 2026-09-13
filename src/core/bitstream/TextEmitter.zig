@@ -224,33 +224,10 @@ fn emitSwitchSink(
             .{ sw.row, sw.col, sink, code },
         );
 
-    try w.print("    {f} = ", .{sink});
-
-    switch (src) {
-        .out => |ts| {
-            try w.print("{f}.", .{ts.corner});
-            const tile = sw.tile(ts.corner);
-            switch (e.config.model.tileType(tile)) {
-                .inert => try w.writeAll("ZERO"),
-                .logic => try w.print(
-                    "{f}",
-                    .{@as(wire_codes.LogicOutput, @enumFromInt(ts.index))},
-                ),
-                .bram => {
-                    const tile_idx = (tile.row - 1) % 4;
-                    try w.print("DO[{}]", .{tile_idx * 4 + ts.index});
-                },
-                .dsp => {
-                    const tile_idx = (tile.row - 1) % 4;
-                    try w.print("O[{}]", .{tile_idx * 4 + ts.index});
-                },
-                .io => try w.writeAll("I"),
-            }
-        },
-        .wire => |wire| try w.print("{f}", .{wire}),
-        .code => |c| try w.print("code {}", .{c}),
-    }
-    try w.writeAll(";\n");
+    try w.print(
+        "    {f} = {f};\n",
+        .{ sink, src.plusSwitch(sw, &e.config.model) },
+    );
 }
 
 fn emitSwitchBlock(e: *TextEmitter, sw: common.SwitchCoords) !void {

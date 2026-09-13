@@ -6,6 +6,7 @@
 const std = @import("std");
 const common = @import("common.zig");
 const routing = @import("routing.zig");
+const DeviceModel = @import("DeviceModel.zig");
 
 pub const LogicOutput = enum(u2) {
     o1a = 0,
@@ -681,6 +682,49 @@ pub const SwitchSinkSrc = union(enum) {
             .code => |code| try writer.print("code {}", .{code}),
         }
     }
+
+    pub fn plusSwitch(src: SwitchSinkSrc, sw: common.SwitchCoords, model: *const DeviceModel) PlusSwitch {
+        return PlusSwitch{
+            .src = src,
+            .sw = sw,
+            .model = model,
+        };
+    }
+
+    pub const PlusSwitch = struct {
+        src: SwitchSinkSrc,
+        sw: common.SwitchCoords,
+        model: *const DeviceModel,
+
+        pub fn format(
+            self: @This(),
+            w: *std.Io.Writer,
+        ) std.Io.Writer.Error!void {
+            switch (self.src) {
+                .out => |ts| {
+                    try w.print("{f}.", .{ts.corner});
+                    const tile = self.sw.tile(ts.corner);
+                    switch (self.model.tileType(tile)) {
+                        .inert => try w.writeAll("ZERO"),
+                        .logic => try w.print(
+                            "{f}",
+                            .{@as(LogicOutput, @enumFromInt(ts.index))},
+                        ),
+                        .bram => {
+                            const tile_idx = (tile.row - 1) % 4;
+                            try w.print("DO[{}]", .{tile_idx * 4 + ts.index});
+                        },
+                        .dsp => {
+                            const tile_idx = (tile.row - 1) % 4;
+                            try w.print("O[{}]", .{tile_idx * 4 + ts.index});
+                        },
+                        .io => try w.writeAll("I"),
+                    }
+                },
+                .wire, .code => try w.print("{f}", .{self.src}),
+            }
+        }
+    };
 };
 
 pub const TileSource = struct {
