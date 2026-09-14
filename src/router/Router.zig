@@ -236,13 +236,31 @@ fn routeNet(r: *Router, net_ref: Net.Ref) void {
     }
 }
 
+/// What the router records in `pass route`. The other passes the examples carry
+/// name upstream tools that do not exist yet; this one names the router here.
+pub const version = "mica-route 0.1";
+
+/// Routes `nl` from scratch, discarding whatever routing it arrived with. There
+/// is no incremental mode: a net's edges have to be the span the search is
+/// growing, so the old spans go first.
 pub fn route(nl: *Netlist, scratch: std.mem.Allocator) void {
+    for (nl.nets.items) |*net| {
+        net.route_start = 0;
+        net.route_len = 0;
+    }
+    nl.route_edges.clearRetainingCapacity();
+
     var r = Router.init(nl, scratch);
     defer r.deinit();
 
     for (0..nl.nets.items.len) |i| {
         r.routeNet(@enumFromInt(i));
     }
+
+    // Replaced, not appended: the routing this just produced supersedes what a
+    // previous run left behind, so that run's claim to have routed the netlist
+    // goes with it.
+    nl.replacePass(.route, version);
 }
 
 test {

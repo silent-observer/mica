@@ -6,6 +6,7 @@ pass synth "mica-synth 0.1";
 pass techmap "mica-map 0.1";
 pass pack "mica-pack 0.1";
 pass place "mica-place 0.1";
+pass route "mica-route 0.1";
 
 net clk : clock;
 net d;
@@ -43,4 +44,12 @@ cell pad_q : IO {
 net clk : clock {
     CLK = 0;
     PIN = 1;
+}
+
+net q {
+    route {
+        logic (1, 2): in A1 = O1A;
+        switch (0, 2): E.L1[0] = SW.O1A;
+        io (0, 3): in O = S[R].L1[0];
+    }
 }

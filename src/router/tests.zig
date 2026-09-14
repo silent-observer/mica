@@ -1,8 +1,7 @@
-//! Golden-file tests for the router. The `route {}` bodies in `examples/*.mnl`
-//! are the expected output: each file is parsed, stripped of its routes, routed
-//! again from scratch and emitted, which has to reproduce the file byte for
-//! byte. So the fixture is still the example itself - there is no unrouted
-//! second copy to keep in sync.
+//! Golden-file tests for the router. Each pair is an unrouted `examples/*.mnl`
+//! and the `examples/*.routed.mnl` beside it: routing the first has to produce
+//! the second byte for byte, which is the same thing `mica route` does, so the
+//! fixtures are literally the tool's own input and output.
 //!
 //! That makes these tests sensitive to *which* of several equivalent wires the
 //! search settles on, not just to whether the result is legal. That is the
@@ -17,52 +16,79 @@ const Netlist = core.Netlist;
 
 const alloc = std.testing.allocator;
 
-const Example = struct { name: []const u8, text: []const u8 };
-
-const examples = [_]Example{
-    .{ .name = "inverter.mnl", .text = @embedFile("inverter_mnl") },
-    .{ .name = "toggle.mnl", .text = @embedFile("toggle_mnl") },
-    .{ .name = "counter.mnl", .text = @embedFile("counter_mnl") },
+const Example = struct {
+    name: []const u8,
+    placed: []const u8,
+    routed: []const u8,
 };
 
-/// Parses, drops every `route {}` body, and hands back a netlist the router can
-/// be pointed at. The caller owns the result.
-fn parseUnrouted(name: []const u8, text: []const u8) !core.NetlistParser.Result {
+const examples = [_]Example{
+    .{
+        .name = "inverter",
+        .placed = @embedFile("inverter_mnl"),
+        .routed = @embedFile("inverter_routed_mnl"),
+    },
+    .{
+        .name = "toggle",
+        .placed = @embedFile("toggle_mnl"),
+        .routed = @embedFile("toggle_routed_mnl"),
+    },
+    .{
+        .name = "counter",
+        .placed = @embedFile("counter_mnl"),
+        .routed = @embedFile("counter_routed_mnl"),
+    },
+};
+
+fn parse(name: []const u8, text: []const u8) !core.NetlistParser.Result {
     const r = core.NetlistParser.parse(text, alloc);
     if (r.err) |e| {
         std.debug.print("{s}: unexpected parse error: {s}\n", .{ name, e });
         r.deinit(alloc);
         return error.NetlistParseFailed;
     }
-
-    const nl = r.netlist.?;
-    for (nl.nets.items) |*net| {
-        net.route_start = 0;
-        net.route_len = 0;
-    }
-    nl.route_edges.clearRetainingCapacity();
     return r;
 }
 
-test "golden: the router reproduces the routes the examples were written with" {
+/// Routes `placed` and returns the emitted text, which the caller frees.
+fn routeToText(name: []const u8, input: []const u8) ![]const u8 {
+    const r = try parse(name, input);
+    defer r.deinit(alloc);
+
+    Router.route(r.netlist.?, alloc);
+
+    const t = core.NetlistEmitter.emit(r.netlist.?, alloc);
+    defer t.deinit(alloc);
+
+    // A route naming a wire that does not exist at that coordinate is exactly
+    // what the emitter warns about, so a warning is a failure here even though
+    // the text might still compare equal.
+    if (t.warnings.len != 0) {
+        for (t.warnings) |w|
+            std.debug.print("{s}: unexpected warning: {s}\n", .{ name, w });
+        return error.RouteEmitWarned;
+    }
+
+    return alloc.dupe(u8, t.text);
+}
+
+test "golden: routing a placed example produces the .routed.mnl beside it" {
     for (examples) |example| {
-        const r = try parseUnrouted(example.name, example.text);
-        defer r.deinit(alloc);
+        const text = try routeToText(example.name, example.placed);
+        defer alloc.free(text);
 
-        Router.route(r.netlist.?, alloc);
+        try std.testing.expectEqualStrings(example.routed, text);
+    }
+}
 
-        const t = core.NetlistEmitter.emit(r.netlist.?, alloc);
-        defer t.deinit(alloc);
+test "routing is idempotent: rerouting a routed netlist reproduces it" {
+    // `Router.route` discards the routing it is handed rather than adding to
+    // it, and replaces the `pass route` stamp rather than appending a second
+    // one, so the routed example is a fixed point of the whole command.
+    for (examples) |example| {
+        const text = try routeToText(example.name, example.routed);
+        defer alloc.free(text);
 
-        // A route naming a wire that does not exist at that coordinate is
-        // exactly what the emitter warns about, so a warning is a failure here
-        // even though the text might still compare equal.
-        if (t.warnings.len != 0) {
-            for (t.warnings) |w|
-                std.debug.print("{s}: unexpected warning: {s}\n", .{ example.name, w });
-            return error.RouteEmitWarned;
-        }
-
-        try std.testing.expectEqualStrings(example.text, t.text);
+        try std.testing.expectEqualStrings(example.routed, text);
     }
 }

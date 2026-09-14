@@ -88,14 +88,8 @@ fn routeCommand(init: std.process.Init, args: []const [:0]const u8) !void {
     // not cover yet can still panic in the router; that is expected for now.
     validate(nl, gpa, in_path, "before routing");
 
-    // The router appends to `route_edges` and expects each net's span to be the
-    // one it is growing, so an already-routed input has to be stripped first.
-    for (nl.nets.items) |*net| {
-        net.route_start = 0;
-        net.route_len = 0;
-    }
-    nl.route_edges.clearRetainingCapacity();
-
+    // Routes from scratch: an input that already carries routing has it
+    // discarded rather than added to.
     Router.route(nl, gpa);
 
     validate(nl, gpa, in_path, "after routing");

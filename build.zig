@@ -32,16 +32,22 @@ pub fn build(b: *std.Build) void {
         .{ "toggle_mnl", "examples/toggle.mnl" },
         .{ "bram_dsp_mnl", "examples/bram_dsp.mnl" },
         .{ "counter_mnl", "examples/counter.mnl" },
+        .{ "inverter_routed_mnl", "examples/inverter.routed.mnl" },
+        .{ "toggle_routed_mnl", "examples/toggle.routed.mnl" },
+        .{ "counter_routed_mnl", "examples/counter.routed.mnl" },
     }) |fixture| {
         core.addAnonymousImport(fixture[0], .{ .root_source_file = b.path(fixture[1]) });
     }
 
-    // The router reroutes those same examples and compares against them, so it
-    // needs the netlist fixtures too.
+    // The router turns each unrouted example into the `.routed.mnl` beside it,
+    // so it needs both halves of every pair.
     for ([_][2][]const u8{
         .{ "inverter_mnl", "examples/inverter.mnl" },
         .{ "toggle_mnl", "examples/toggle.mnl" },
         .{ "counter_mnl", "examples/counter.mnl" },
+        .{ "inverter_routed_mnl", "examples/inverter.routed.mnl" },
+        .{ "toggle_routed_mnl", "examples/toggle.routed.mnl" },
+        .{ "counter_routed_mnl", "examples/counter.routed.mnl" },
     }) |fixture| {
         router.addAnonymousImport(fixture[0], .{ .root_source_file = b.path(fixture[1]) });
     }

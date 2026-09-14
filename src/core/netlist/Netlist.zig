@@ -106,6 +106,18 @@ pub fn setPass(self: *Netlist, pass: Pass, text: []const u8) void {
     self.passes.put(pass, new_text);
 }
 
+/// Overwrites a pass's text rather than unioning with it, for a tool recording
+/// that it has just run. `setPass` is the parser's door, where the monotonic
+/// rule applies and a repeated `pass` line has to keep both spellings; a tool
+/// re-running supersedes the previous claim instead, and has to say so, because
+/// the emitter writes one line per pass and cannot spell the union back out.
+pub fn replacePass(self: *Netlist, pass: Pass, text: []const u8) void {
+    const arena = self.arena.allocator();
+    if (self.passes.get(pass)) |old_text|
+        arena.free(old_text);
+    self.passes.put(pass, arena.dupe(u8, text) catch common.oom());
+}
+
 // Metadata
 
 pub const Owner = union(enum) { file, net: Net.Ref, cell: Cell.Ref };

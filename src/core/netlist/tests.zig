@@ -20,6 +20,12 @@ const examples = [_]Example{
     .{ .name = "toggle.mnl", .text = @embedFile("toggle_mnl") },
     .{ .name = "bram_dsp.mnl", .text = @embedFile("bram_dsp_mnl") },
     .{ .name = "counter.mnl", .text = @embedFile("counter_mnl") },
+    // The routed halves of those pairs: the router writes them, but they still
+    // have to be canonical for the text converters, and they are where most of
+    // the `route {}` spellings live now that the placed examples carry none.
+    .{ .name = "inverter.routed.mnl", .text = @embedFile("inverter_routed_mnl") },
+    .{ .name = "toggle.routed.mnl", .text = @embedFile("toggle_routed_mnl") },
+    .{ .name = "counter.routed.mnl", .text = @embedFile("counter_routed_mnl") },
 };
 
 /// Parses text that is expected to be valid. The caller owns the result.
@@ -291,4 +297,3 @@ test "a netlist survives a second round trip unchanged" {
         try std.testing.expectEqualStrings(first_text.text, second_text.text);
     }
 }
-
