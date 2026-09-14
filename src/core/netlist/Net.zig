@@ -29,6 +29,18 @@ pub const Ref = enum(u32) {
     one = 0xFFFF_FFFD,
     _, // A net index
 
+    pub fn int(ref: Ref) u32 {
+        std.debug.assert(ref.isReal());
+        return @intFromEnum(ref);
+    }
+
+    pub fn isReal(ref: Ref) bool {
+        return switch (ref) {
+            .none, .zero, .one => false,
+            else => true,
+        };
+    }
+
     /// Formats any ref, including the sentinels `Netlist.getNet` asserts on.
     pub fn fmt(ref: Ref, netlist: *const Netlist) Printable {
         return switch (ref) {

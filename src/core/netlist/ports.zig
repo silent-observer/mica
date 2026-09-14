@@ -3,6 +3,7 @@
 //! cannot be built until those are known - hence the `ParamMissing` error and
 //! the rule that parameters precede ports.
 
+const std = @import("std");
 const Indexes = @import("Indexes.zig");
 const port_tables = @import("port_tables.zig");
 const cell_type = @import("cell_type.zig");
@@ -70,6 +71,7 @@ const MAX_PORT_ENTRIES = blk: {
 /// in the cell's `port_nets` span.
 pub const LookupTable = struct {
     total: u16,
+    total_ins: u16,
     ports: [MAX_PORT_ENTRIES]PerPort, // Same order as in CellEntry entries
 
     pub const PerPort = struct {
@@ -77,21 +79,46 @@ pub const LookupTable = struct {
         full_range: Indexes.Range,
         count: u16,
     };
+
+    pub fn isInput(lookup: *const LookupTable, port_idx: usize) bool {
+        return port_idx < lookup.total_ins;
+    }
 };
 
 pub fn buildLookupTable(comptime entry: CellEntry, p: anytype) error{ParamMissing}!LookupTable {
     var total: u16 = 0;
+    var total_ins: u16 = 0;
     var ports: [MAX_PORT_ENTRIES]LookupTable.PerPort = undefined;
     inline for (entry.entries, 0..) |e, i| {
         ports[i].base = total;
         ports[i].full_range = try e.range(p);
         ports[i].count = @intCast(ports[i].full_range.count());
         total += ports[i].count;
+        if (e.kind == .in)
+            total_ins += ports[i].count;
     }
 
     return LookupTable{
         .total = total,
+        .total_ins = total_ins,
         .ports = ports,
+    };
+}
+
+pub fn buildLookupTableCell(cell: *const Cell) error{ParamMissing}!LookupTable {
+    return switch (cell.params) {
+        .physical => |params_union| switch (std.meta.activeTag(params_union)) {
+            inline else => |pt| comptime buildLookupTable(
+                port_tables.physical_cells.get(pt),
+                {},
+            ) catch unreachable,
+        },
+        .logical => |params_union| switch (params_union) {
+            inline else => |params, lt| try buildLookupTable(
+                port_tables.logical_cells.get(lt),
+                params,
+            ),
+        },
     };
 }
 

@@ -42,22 +42,9 @@ fn parseParamValue(p: *NetlistParser, comptime V: type) !V {
 /// Logical widths come from the cell's parameters, which must therefore be
 /// stated before its first port.
 fn getPortsLookupTable(p: *NetlistParser, cell_ref: Cell.Ref) !ports.LookupTable {
-    return switch (p.nl().getCell(cell_ref).params) {
-        .physical => |params_union| switch (std.meta.activeTag(params_union)) {
-            inline else => |pt| comptime ports.buildLookupTable(
-                ports.cellEntry(.{ .physical = pt }),
-                {},
-            ) catch unreachable,
-        },
-        .logical => |params_union| switch (params_union) {
-            inline else => |params, lt| ports.buildLookupTable(
-                ports.cellEntry(.{ .logical = lt }),
-                params,
-            ) catch
-                try p.p.err("You must define all WIDTH/DEPTH/N parameters " ++
-                    "before input/output ports in the cell", .{}),
-        },
-    };
+    return ports.buildLookupTableCell(p.nl().getCell(cell_ref)) catch
+        try p.p.err("You must define all WIDTH/DEPTH/N parameters " ++
+            "before input/output ports in the cell", .{});
 }
 
 const MemShape = struct { data_width: u16, addr_width: u8 };

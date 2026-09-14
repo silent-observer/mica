@@ -520,10 +520,10 @@ fn emitCellPortRanges(
             .ref = net_ref,
             .uniform = true,
             // Only actual nets get ranges, not constant ones
-            .net = if (net_ref == .zero or net_ref == .one) null else blk: {
+            .net = if (net_ref.isReal()) blk: {
                 const net = e.nl.getNet(net_ref);
                 break :blk .{ .base = net.name, .range = .single(net.indexes) };
-            },
+            } else null,
         });
     }
 
@@ -565,36 +565,28 @@ fn emitCellPorts(e: *NetlistEmitter, name: []const u8, cell: *const Netlist.Cell
     // are still unset lands here too, since nothing can bind before them.
     if (cell.ports_len == 0) return;
 
-    switch (cell.params) {
-        inline else => |params_union, kind| switch (params_union) {
-            inline else => |params, t| {
-                const entry = comptime ports.cellEntry(
-                    @unionInit(cell_type.Full, @tagName(kind), t),
-                );
-                const lookup = ports.buildLookupTable(entry, params) catch {
-                    e.warn(
-                        "Cell '{s}' has ports bound but no widths to lay them out",
-                        .{name},
-                    );
-                    return;
-                };
-                if (lookup.total != cell.ports_len) {
-                    e.warn(
-                        "Cell '{s}' has {} port bits, but its parameters describe {}",
-                        .{ name, cell.ports_len, lookup.total },
-                    );
-                    return;
-                }
+    const entry = ports.cellEntry(cell.cellType());
+    const lookup = ports.buildLookupTableCell(cell) catch {
+        e.warn(
+            "Cell '{s}' has ports bound but no widths to lay them out",
+            .{name},
+        );
+        return;
+    };
+    if (lookup.total != cell.ports_len) {
+        e.warn(
+            "Cell '{s}' has {} port bits, but its parameters describe {}",
+            .{ name, cell.ports_len, lookup.total },
+        );
+        return;
+    }
 
-                for (entry.entries, lookup.ports[0..entry.entries.len]) |port, port_lookup| {
-                    try e.emitCellPortRanges(
-                        port,
-                        port_lookup,
-                        e.nl.getCellPorts(cell, port_lookup.base, port_lookup.count),
-                    );
-                }
-            },
-        },
+    for (entry.entries, lookup.ports[0..entry.entries.len]) |port, port_lookup| {
+        try e.emitCellPortRanges(
+            port,
+            port_lookup,
+            e.nl.getCellPorts(cell, port_lookup.base, port_lookup.count),
+        );
     }
 }
 

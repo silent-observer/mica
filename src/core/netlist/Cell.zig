@@ -34,6 +34,11 @@ meta: Meta.List = .{},
 pub const Ref = enum(u32) {
     none = 0xFFFF_FFFF,
     _, // A cell index
+
+    pub fn int(ref: Ref) u32 {
+        std.debug.assert(ref != .none);
+        return @intFromEnum(ref);
+    }
 };
 pub const SlotId = enum {
     none,

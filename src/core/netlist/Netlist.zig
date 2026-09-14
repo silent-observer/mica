@@ -15,6 +15,7 @@ pub const Cell = @import("Cell.zig");
 pub const Meta = @import("Meta.zig");
 pub const cell_type = @import("cell_type.zig");
 pub const route = @import("route.zig");
+pub const ports = @import("ports.zig");
 
 pub const Netlist = @This();
 
@@ -141,8 +142,8 @@ pub fn findNetRef(self: *const Netlist, name_id: Net.BaseId, indexes: Indexes) ?
 /// Asserts `ref` names a real net; use `Net.Ref.fmt` for a ref that may still
 /// be a sentinel.
 pub fn getNet(self: *const Netlist, ref: Net.Ref) *Net {
-    std.debug.assert(ref != .none and ref != .zero and ref != .one);
-    return &self.nets.items[@intFromEnum(ref)];
+    std.debug.assert(ref.isReal());
+    return &self.nets.items[ref.int()];
 }
 
 /// Returns the existing ref if the net is already defined. A `kind` may be
@@ -191,14 +192,14 @@ pub fn internCellRef(
 
     const ct = t orelse return error.UnknownCellType;
     const ref = self.cell_names.intern(name);
-    std.debug.assert(@intFromEnum(ref) == self.cells.items.len);
+    std.debug.assert(ref.int() == self.cells.items.len);
     self.cells.append(self.gpa, .init(ct)) catch common.oom();
     return ref;
 }
 
 pub fn getCell(self: *const Netlist, id: Cell.Ref) *Cell {
     std.debug.assert(id != .none);
-    return &self.cells.items[@intFromEnum(id)];
+    return &self.cells.items[id.int()];
 }
 
 // Cell ports
