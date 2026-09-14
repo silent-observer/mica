@@ -467,7 +467,7 @@
               "name": "storage.type.input.mica"
             },
             "2": {
-              "name": "variable.other.input.mica"
+              "name": "support.function.tile-input.mica"
             },
             "3": {
               "name": "keyword.operator.assignment.mica"
@@ -521,16 +521,16 @@
     "routing-reference": {
       "patterns": [
         {
-          "name": "variable.other.routing.mica",
+          "name": "support.function.tile-output.mica",
           "match": "\\b(?:NE|SE|SW|NW)\\.(?:ZERO|O1A|O2A|O1B|O2B|I|O|DO)(?:\\[\\d+\\])?"
         },
         {
-          "name": "variable.other.routing.mica",
+          "name": "variable.other.routing.wire.mica",
           "match": "\\b(?:[NESW]|[HEW][0-4])(?:\\[[UDLR]+\\])?\\.(?:L(?:1|4|16)\\[\\d+\\])"
         },
         {
-          "name": "variable.other.routing.mica",
-          "match": "\\b(?:O1A|O2A|O1B|O2B)"
+          "name": "support.function.tile-output.mica",
+          "match": "\\b(?:O1A|O2A|O1B|O2B)\\b"
         },
         {
           "name": "constant.numeric.integer.mica",

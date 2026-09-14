@@ -382,7 +382,7 @@
               "name": "storage.type.input.mnl"
             },
             "9": {
-              "name": "variable.other.input.mnl"
+              "name": "support.function.tile-input.mnl"
             },
             "10": {
               "name": "keyword.operator.assignment.mnl"
@@ -405,16 +405,16 @@
     "routing-reference": {
       "patterns": [
         {
-          "name": "variable.other.routing.mnl",
+          "name": "support.function.tile-output.mnl",
           "match": "\\b(?:NE|SE|SW|NW)\\.(?:ZERO|O1A|O2A|O1B|O2B|I|O|DO)(?:\\[\\d+\\])?"
         },
         {
-          "name": "variable.other.routing.mnl",
+          "name": "variable.other.routing.wire.mnl",
           "match": "\\b(?:[NESW]|[HEW][0-4])(?:\\[[UDLR]+\\])?\\.(?:L(?:1|4|16)\\[\\d+\\])"
         },
         {
-          "name": "variable.other.routing.mnl",
-          "match": "\\b(?:O1A|O2A|O1B|O2B)"
+          "name": "support.function.tile-output.mnl",
+          "match": "\\b(?:O1A|O2A|O1B|O2B)\\b"
         },
         {
           "name": "constant.numeric.integer.mnl",
@@ -701,7 +701,7 @@
     "port-name": {
       "patterns": [
         {
-          "name": "variable.other.port.mnl",
+          "name": "support.function.port.mnl",
           "match": "[A-Za-z][A-Za-z0-9_]*"
         },
         {
