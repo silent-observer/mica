@@ -10,6 +10,15 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    const router = b.addModule("router", .{
+        .root_source_file = b.path("src/router/Router.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "core", .module = core },
+        },
+    });
+
     // @embedFile is confined to the module root (src/core), so the examples the
     // tests use as fixtures are handed in as imports. Note that addEmbedPath is
     // not the tool for this: it feeds C's #embed, not Zig's.
@@ -34,6 +43,7 @@ pub fn build(b: *std.Build) void {
             .optimize = optimize,
             .imports = &.{
                 .{ .name = "core", .module = core },
+                .{ .name = "router", .module = router },
             },
         }),
         .use_llvm = true,

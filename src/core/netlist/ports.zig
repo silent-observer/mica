@@ -72,6 +72,7 @@ const MAX_PORT_ENTRIES = blk: {
 pub const LookupTable = struct {
     total: u16,
     total_ins: u16,
+    entries: u8,
     ports: [MAX_PORT_ENTRIES]PerPort, // Same order as in CellEntry entries
 
     pub const PerPort = struct {
@@ -82,6 +83,20 @@ pub const LookupTable = struct {
 
     pub fn isInput(lookup: *const LookupTable, port_idx: usize) bool {
         return port_idx < lookup.total_ins;
+    }
+
+    pub fn find(lookup: *const LookupTable, port_idx: usize) struct { entry_idx: u8, sub_idx: u16 } {
+        var x = port_idx;
+        std.debug.assert(x < lookup.total);
+        for (lookup.ports[0..lookup.entries], 0..) |per_port, entry_idx| {
+            if (x < per_port.count)
+                return .{
+                    .entry_idx = @intCast(entry_idx),
+                    .sub_idx = @intCast(x),
+                };
+            x -= per_port.count;
+        }
+        unreachable;
     }
 };
 
@@ -101,18 +116,25 @@ pub fn buildLookupTable(comptime entry: CellEntry, p: anytype) error{ParamMissin
     return LookupTable{
         .total = total,
         .total_ins = total_ins,
+        .entries = @intCast(entry.entries.len),
         .ports = ports,
     };
 }
 
+const physical_lookups: std.EnumArray(cell_type.Physical, LookupTable) = blk: {
+    var result: std.EnumArray(cell_type.Physical, LookupTable) = .initUndefined();
+    for (std.enums.values(cell_type.Physical)) |ct| {
+        result.set(
+            ct,
+            buildLookupTable(port_tables.physical_cells.get(ct), {}) catch unreachable,
+        );
+    }
+    break :blk result;
+};
+
 pub fn buildLookupTableCell(cell: *const Cell) error{ParamMissing}!LookupTable {
     return switch (cell.params) {
-        .physical => |params_union| switch (std.meta.activeTag(params_union)) {
-            inline else => |pt| comptime buildLookupTable(
-                port_tables.physical_cells.get(pt),
-                {},
-            ) catch unreachable,
-        },
+        .physical => |params_union| physical_lookups.get(std.meta.activeTag(params_union)),
         .logical => |params_union| switch (params_union) {
             inline else => |params, lt| try buildLookupTable(
                 port_tables.logical_cells.get(lt),

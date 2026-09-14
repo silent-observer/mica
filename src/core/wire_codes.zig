@@ -8,25 +8,6 @@ const common = @import("common.zig");
 const routing = @import("routing.zig");
 const DeviceModel = @import("DeviceModel.zig");
 
-pub const LogicOutput = enum(u2) {
-    o1a = 0,
-    o1b = 1,
-    o2a = 2,
-    o2b = 3,
-
-    pub fn format(
-        self: @This(),
-        writer: *std.Io.Writer,
-    ) std.Io.Writer.Error!void {
-        switch (self) {
-            .o1a => try writer.writeAll("O1A"),
-            .o1b => try writer.writeAll("O1B"),
-            .o2a => try writer.writeAll("O2A"),
-            .o2b => try writer.writeAll("O2B"),
-        }
-    }
-};
-
 fn trackWindow(
     parity: u1,
     d: usize,
@@ -98,7 +79,7 @@ fn formatInputSrc(self: anytype, writer: *std.Io.Writer) std.Io.Writer.Error!voi
 pub const LogicInputSrc = union(enum) {
     zero: void,
     one: void,
-    local: LogicOutput,
+    local: common.LogicOutput,
     wire: common.DirectionalWire1x1,
     code: u5,
 
@@ -708,7 +689,7 @@ pub const SwitchSinkSrc = union(enum) {
                         .inert => try w.writeAll("ZERO"),
                         .logic => try w.print(
                             "{f}",
-                            .{@as(LogicOutput, @enumFromInt(ts.index))},
+                            .{@as(common.LogicOutput, @enumFromInt(ts.index))},
                         ),
                         .bram => {
                             const tile_idx = (tile.row - 1) % 4;
@@ -942,12 +923,11 @@ pub fn resolveInput(
     comptime t: common.TileType,
     tile: common.TileCoords,
     in: t.Input(),
-    cxt: t.Input().Cxt,
     code: u5,
-    grid: common.GridSize,
+    model: DeviceModel,
 ) InputSrc(t) {
-    const src: InputSrc(t) = decodeInput(t, in, cxt, code);
-    return resolveTileInput(tile, src, code, grid);
+    const src: InputSrc(t) = decodeInput(t, in, model.inputCxt(t, tile), code);
+    return resolveTileInput(tile, src, code, model.grid);
 }
 
 test "encode is the inverse of decode" {
@@ -1039,8 +1019,6 @@ test "encode is the inverse of decode" {
     }
 }
 
-const mica1s_grid = common.GridSize{ .rows = 50, .cols = 66 };
-
 test "resolveSwitchSink flags wires missing at a grid corner" {
     // At (0,0) nothing arrives from the north or the west.
     const sw = common.SwitchCoords{ .row = 0, .col = 0 };
@@ -1063,7 +1041,7 @@ test "resolveSwitchSink flags wires missing at a grid corner" {
     for (expected, 0..) |tag, code| {
         try std.testing.expectEqual(
             tag,
-            std.meta.activeTag(resolveSwitchSink(sw, sink, @intCast(code), mica1s_grid)),
+            std.meta.activeTag(resolveSwitchSink(sw, sink, @intCast(code), DeviceModel.mica1s.grid)),
         );
     }
 }
@@ -1083,7 +1061,7 @@ test "resolveSwitchSink is transparent in the interior" {
                     const code: u4 = @intCast(i);
                     try std.testing.expectEqual(
                         decodeSwitchSink(sink, code),
-                        resolveSwitchSink(sw, sink, code, mica1s_grid),
+                        resolveSwitchSink(sw, sink, code, DeviceModel.mica1s.grid),
                     );
                 }
             }
@@ -1097,22 +1075,22 @@ test "resolveLogicInput flags an L4 truncated past the grid corner" {
     // Code 7 is N[R].L4[0], whose segment starts at switchbox (0,0).
     try std.testing.expectEqual(
         decodeLogicInput(.a1, 7),
-        resolveInput(.logic, tile, .a1, {}, 7, mica1s_grid),
+        resolveInput(.logic, tile, .a1, 7, DeviceModel.mica1s),
     );
 
     // Code 10 is N[R].L4[2], which would have to start three boxes further west.
     try std.testing.expectEqual(
         LogicInputSrc{ .code = 10 },
-        resolveInput(.logic, tile, .a1, {}, 10, mica1s_grid),
+        resolveInput(.logic, tile, .a1, 10, DeviceModel.mica1s),
     );
 
     // Constants and local outputs are never geometric.
     try std.testing.expectEqual(
         LogicInputSrc.zero,
-        resolveInput(.logic, tile, .a1, {}, 0, mica1s_grid),
+        resolveInput(.logic, tile, .a1, 0, DeviceModel.mica1s),
     );
     try std.testing.expectEqual(
         LogicInputSrc{ .local = .o1a },
-        resolveInput(.logic, tile, .a1, {}, 2, mica1s_grid),
+        resolveInput(.logic, tile, .a1, 2, DeviceModel.mica1s),
     );
 }

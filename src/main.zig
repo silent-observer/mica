@@ -2,6 +2,7 @@ const std = @import("std");
 const Io = std.Io;
 
 const core = @import("core");
+const Router = @import("router");
 
 pub fn main(init: std.process.Init) !void {
     const text = try std.Io.Dir.cwd().readFileAlloc(
@@ -75,4 +76,6 @@ pub fn main(init: std.process.Init) !void {
     //     try f.writeConnections(&w.interface);
     //     try w.flush();
     // }
+
+    Router.route(undefined, init.gpa);
 }

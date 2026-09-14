@@ -16,6 +16,8 @@ pub const Meta = @import("Meta.zig");
 pub const cell_type = @import("cell_type.zig");
 pub const route = @import("route.zig");
 pub const ports = @import("ports.zig");
+pub const NetIndex = @import("NetIndex.zig");
+pub const tile_mapping = @import("tile_mapping.zig");
 
 pub const Netlist = @This();
 

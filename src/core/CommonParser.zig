@@ -288,7 +288,7 @@ const classes: std.StaticStringMap(common.WireClass) = .initComptime(.{
     .{ "L4", .l4 },
     .{ "L16", .l16 },
 });
-const logic_outputs: std.StaticStringMap(wire_codes.LogicOutput) = .initComptime(.{
+const logic_outputs: std.StaticStringMap(common.LogicOutput) = .initComptime(.{
     .{ "O1A", .o1a },
     .{ "O1B", .o1b },
     .{ "O2A", .o2a },

@@ -667,6 +667,25 @@ pub const LogicInput = enum(u8) {
     }
 };
 
+pub const LogicOutput = enum(u2) {
+    o1a = 0,
+    o1b = 1,
+    o2a = 2,
+    o2b = 3,
+
+    pub fn format(
+        self: @This(),
+        writer: *std.Io.Writer,
+    ) std.Io.Writer.Error!void {
+        switch (self) {
+            .o1a => try writer.writeAll("O1A"),
+            .o1b => try writer.writeAll("O1B"),
+            .o2a => try writer.writeAll("O2A"),
+            .o2b => try writer.writeAll("O2B"),
+        }
+    }
+};
+
 pub const BramInput = union(enum) {
     a1: u4,
     a2: u4,

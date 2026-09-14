@@ -224,9 +224,8 @@ fn emitRoute(e: *NetlistEmitter, net: *const Netlist.Net) !void {
                     t,
                     s.at,
                     s.input,
-                    e.nl.model.inputCxt(t, s.at),
                     s.src,
-                    e.nl.model.grid,
+                    e.nl.model,
                 );
                 if (src == .code)
                     e.warn(

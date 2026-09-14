@@ -362,8 +362,7 @@ fn emitCommands(
             const in = t.Input().fromIdx(@intCast(idx));
             const code = Configuration.getInput(cfg, in);
             if (code == 0) continue;
-            const cxt = e.config.model.inputCxt(t, tile);
-            const src = wire_codes.resolveInput(t, tile, in, cxt, code, e.config.model.grid);
+            const src = wire_codes.resolveInput(t, tile, in, code, e.config.model);
             if (src == .code)
                 e.warn(
                     @tagName(t) ++ " ({},{}) in {f}: code {} names a wire that does not exist here",
