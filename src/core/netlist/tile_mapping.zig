@@ -236,29 +236,35 @@ pub fn pinSite(cell: *const Cell, port: u16) PinSite {
 
     const s = lookup.find(port);
     const mapping = cell_mapping.mappings[s.entry_idx];
-    const slot4: usize = switch (cell.slot) {
-        .none => unreachable,
-        .le1, .le1a => 0,
-        .le1b => 1,
-        .le2, .le2a => 2,
-        .le2b => 3,
-    };
     return switch (mapping) {
         .dedicated => .dedicated,
 
         .fixed_in => |in| .{ .input = in },
-        .per_slot_in => |ins| .{ .input = .{ .logic = ins[slot4 / 2] } },
+        .per_slot_in => |ins| .{ .input = .{ .logic = ins[slotIndex(cell) / 2] } },
         .indexed_in => |f| .{ .input = f(s.sub_idx) },
         .carry_in => .carry_in,
 
         .fixed_out => |out| .{ .output = out },
         .per_slot_out => |outs| .{ .output = .{
-            .idx = @intFromEnum(outs[slot4 / 2]),
+            .idx = @intFromEnum(outs[slotIndex(cell) / 2]),
         } },
         .per_slot_out4 => |outs| .{ .output = .{
-            .idx = @intFromEnum(outs[slot4]),
+            .idx = @intFromEnum(outs[slotIndex(cell)]),
         } },
         .indexed_out => |f| .{ .output = f(s.sub_idx) },
+    };
+}
+
+/// Only the `per_slot_*` mappings need this, and it is called from inside those
+/// prongs rather than up front: a cell that owns a whole tile (IO, BRAM, DSP,
+/// MEM) has no `SLOT`, and reaching this from one of them is the bug.
+fn slotIndex(cell: *const Cell) usize {
+    return switch (cell.slot) {
+        .none => unreachable,
+        .le1, .le1a => 0,
+        .le1b => 1,
+        .le2, .le2a => 2,
+        .le2b => 3,
     };
 }
 

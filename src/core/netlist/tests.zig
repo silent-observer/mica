@@ -19,6 +19,7 @@ const examples = [_]Example{
     .{ .name = "inverter.mnl", .text = @embedFile("inverter_mnl") },
     .{ .name = "toggle.mnl", .text = @embedFile("toggle_mnl") },
     .{ .name = "bram_dsp.mnl", .text = @embedFile("bram_dsp_mnl") },
+    .{ .name = "counter.mnl", .text = @embedFile("counter_mnl") },
 };
 
 /// Parses text that is expected to be valid. The caller owns the result.

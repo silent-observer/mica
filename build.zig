@@ -31,8 +31,19 @@ pub fn build(b: *std.Build) void {
         .{ "inverter_mnl", "examples/inverter.mnl" },
         .{ "toggle_mnl", "examples/toggle.mnl" },
         .{ "bram_dsp_mnl", "examples/bram_dsp.mnl" },
+        .{ "counter_mnl", "examples/counter.mnl" },
     }) |fixture| {
         core.addAnonymousImport(fixture[0], .{ .root_source_file = b.path(fixture[1]) });
+    }
+
+    // The router reroutes those same examples and compares against them, so it
+    // needs the netlist fixtures too.
+    for ([_][2][]const u8{
+        .{ "inverter_mnl", "examples/inverter.mnl" },
+        .{ "toggle_mnl", "examples/toggle.mnl" },
+        .{ "counter_mnl", "examples/counter.mnl" },
+    }) |fixture| {
+        router.addAnonymousImport(fixture[0], .{ .root_source_file = b.path(fixture[1]) });
     }
 
     const exe = b.addExecutable(.{
@@ -62,19 +73,32 @@ pub fn build(b: *std.Build) void {
         run_cmd.addArgs(args);
     }
 
+    // `zig build test -Dtest-filter=pinCoord` runs a single test; the fixtures
+    // above rule out a bare `zig test src/core/core.zig`. Declared once and
+    // shared, since `b.option` panics if the same name is declared twice.
+    const test_filters = b.option(
+        []const []const u8,
+        "test-filter",
+        "Only run tests whose name contains one of these",
+    ) orelse &.{};
+
     const mod_tests = b.addTest(.{
         .root_module = core,
-        // `zig build test -Dtest-filter=pinCoord` runs a single test; the
-        // fixtures above rule out a bare `zig test src/core/core.zig`.
-        .filters = b.option(
-            []const []const u8,
-            "test-filter",
-            "Only run tests whose name contains one of these",
-        ) orelse &.{},
+        .filters = test_filters,
     });
 
     const run_mod_tests = b.addRunArtifact(mod_tests);
 
+    // `core` cannot import `router`, so the router's tests are a second compile
+    // rather than another `_ = @import(...)` in core.zig's test block.
+    const router_tests = b.addTest(.{
+        .root_module = router,
+        .filters = test_filters,
+    });
+
+    const run_router_tests = b.addRunArtifact(router_tests);
+
     const test_step = b.step("test", "Run tests");
     test_step.dependOn(&run_mod_tests.step);
+    test_step.dependOn(&run_router_tests.step);
 }

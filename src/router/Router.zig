@@ -113,7 +113,7 @@ fn routeSink(
                             w.track,
                             r.nl.model.grid,
                         ) orelse continue;
-                        queue.append(wire_key) catch oom();
+                        queue.insert(0, wire_key) catch oom();
                         visited.put(wire_key, .{
                             .parent = null,
                             .edge = switch (t) {
@@ -243,4 +243,10 @@ pub fn route(nl: *Netlist, scratch: std.mem.Allocator) void {
     for (0..nl.nets.items.len) |i| {
         r.routeNet(@enumFromInt(i));
     }
+}
+
+test {
+    // refAllDecls would only reach this file's own decls, and the golden tests
+    // are not decls of it.
+    _ = @import("tests.zig");
 }

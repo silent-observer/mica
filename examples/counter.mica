@@ -5,188 +5,177 @@ global {
     CLK_PIN_ENABLE[0] = 1;
 }
 
-switch (0,16) {
-    W.L1[0] = E.L16[0];
+switch (0, 20) {
+    W.L16[0] = S.L4[0];
 }
 
-switch (0,32) {
-    W.L1[0] = E.L4[0];
-    W.L16[0] = S.L16[0];
+switch (0, 33) {
+    W.L4[0] = E.L4[0];
 }
 
-switch (0,36) {
-    W.L4[0] = S.L16[0];
+switch (0, 36) {
+    E.L16[0] = S.L4[0];
 }
 
-switch (0,47) {
-    E.L1[0] = S.L16[0];
-}
-
-switch (16,32) {
-    N.L16[0] = E.L4[0];
-}
-
-switch (16,36) {
-    N.L16[0] = S.L4[1];
+switch (0, 37) {
     W.L4[0] = S.L4[0];
 }
 
-switch (16,43) {
-    E.L4[0] = S.L4[0];
-}
-
-switch (16,47) {
-    N.L16[0] = W.L4[0];
-}
-
-switch (20,36) {
-    N.L4[0] = S.L4[1];
-    N.L4[1] = S.L4[0];
-}
-
-switch (20,43) {
+switch (4, 20) {
     N.L4[0] = S.L4[0];
 }
 
-switch (24,0) {
+switch (4, 36) {
+    N.L4[0] = S.L4[0];
+}
+
+switch (4, 37) {
+    N.L4[0] = S.L16[0];
+}
+
+switch (8, 20) {
+    N.L4[0] = E.L16[0];
+}
+
+switch (8, 36) {
+    N.L4[0] = S.L16[0];
+    W.L16[0] = E.L1[4];
+}
+
+switch (8, 37) {
+    W.L1[4] = S.L16[0];
+}
+
+switch (20, 37) {
+    N.L16[0] = S.L4[1];
+}
+
+switch (21, 37) {
+    E.L1[2] = S.L4[1];
+}
+
+switch (21, 38) {
+    S.L4[0] = W.L1[2];
+}
+
+switch (24, 0) {
     S.L1[0] = E.L16[0];
 }
 
-switch (24,16) {
+switch (24, 16) {
     W.L16[0] = E.L16[0];
 }
 
-switch (24,32) {
-    S.L4[0] = E.L4[0];
+switch (24, 20) {
+    S.L16[0] = E.L16[0];
+}
+
+switch (24, 32) {
     W.L16[0] = E.L4[1];
 }
 
-switch (24,36) {
-    N.L4[0] = E.L1[2];
-    N.L4[1] = E.L1[5];
-    W.L4[0] = E.L1[0];
+switch (24, 36) {
+    N.L16[0] = S.L1[4];
+    E.L4[0] = S.L1[2];
     W.L4[1] = E.L1[3];
+    W.L16[0] = E.L1[4];
 }
 
-switch (24,37) {
-    W.L1[0] = SE.DO[1];
-    W.L1[2] = SE.DO[3];
+switch (24, 37) {
+    N.L4[1] = SE.DO[3];
+    N.L16[0] = SE.DO[2];
+    E.L1[1] = S.L1[3];
     W.L1[3] = SE.DO[0];
-    W.L1[5] = SE.DO[2];
+    W.L1[4] = SE.DO[1];
 }
 
-switch (24,38) {
-    E.L1[0] = S.L1[2];
+switch (25, 36) {
+    N.L1[2] = SE.O1A;
+    N.L1[4] = E.L1[0];
 }
 
-switch (24,39) {
-    E.L4[0] = W.L1[0];
-}
-
-switch (24,43) {
-    N.L4[0] = W.L4[0];
-}
-
-switch (25,36) {
-    E.L1[1] = SE.O1A;
-    E.L1[5] = S.L1[1];
-}
-
-switch (25,37) {
-    E.L1[1] = W.L1[1];
-    E.L1[2] = SW.O2A;
-    E.L1[3] = S.L1[5];
-    E.L1[5] = W.L1[5];
-}
-
-switch (25,38) {
-    N.L1[2] = SW.DO[5];
-}
-
-switch (26,36) {
-    N.L1[1] = S.L1[1];
-}
-
-switch (26,37) {
+switch (25, 37) {
     N.L1[3] = SW.O2A;
-    N.L1[5] = SW.O1A;
+    N.L4[1] = S.L1[3];
+    W.L1[0] = SE.DO[5];
+}
+
+switch (26, 37) {
+    N.L1[3] = SW.O2A;
+    S.L1[1] = NE.DO[4];
     S.L1[2] = NW.O1A;
 }
 
-switch (26,38) {
-    E.L1[3] = NW.DO[4];
+switch (26, 38) {
     E.L4[1] = NW.DO[6];
 }
 
-switch (26,39) {
-    S.L1[1] = W.L1[3];
+switch (26, 42) {
+    E.L1[4] = W.L4[1];
 }
 
-switch (26,42) {
-    E.L1[0] = W.L4[1];
+switch (26, 43) {
+    E.L1[4] = W.L1[4];
 }
 
-switch (26,43) {
-    E.L1[0] = W.L1[0];
+switch (26, 44) {
+    E.L16[0] = W.L1[4];
 }
 
-switch (26,44) {
-    E.L4[0] = W.L1[0];
+switch (26, 60) {
+    E.L4[0] = W.L16[0];
 }
 
-switch (26,48) {
-    E.L16[0] = W.L4[0];
+switch (26, 64) {
+    N.L1[0] = W.L4[0];
 }
 
-switch (26,64) {
-    N.L1[0] = W.L16[0];
+switch (27, 36) {
+    S.L1[4] = E.L1[5];
 }
 
-switch (27,36) {
-    N.L1[1] = NE.O2A;
+switch (27, 37) {
+    N.L4[0] = NW.O1A;
+    W.L1[5] = N.L1[1];
 }
 
-switch (27,39) {
-    S.L1[1] = N.L1[1];
+switch (28, 36) {
+    S.L16[0] = N.L1[4];
 }
 
-switch (28,32) {
+switch (40, 20) {
+    S.L4[0] = N.L16[0];
+}
+
+switch (44, 20) {
     S.L4[0] = N.L4[0];
 }
 
-switch (28,39) {
-    E.L4[0] = N.L1[1];
+switch (44, 36) {
+    S.L4[0] = N.L16[0];
 }
 
-switch (28,43) {
-    E.L4[0] = W.L4[0];
+switch (48, 20) {
+    W.L16[0] = N.L4[0];
 }
 
-switch (28,47) {
-    S.L4[0] = W.L4[0];
+switch (48, 36) {
+    E.L16[0] = N.L4[0];
 }
 
-switch (32,32) {
-    S.L16[0] = N.L4[0];
+bram (25, 38) {
+    WIDTH = 8;
+    data {
+        000: 77 24 5D 6D 2E 6B 7B 25;
+        008: 7F 6F 00 00 00 00 00 00;
+    }
+    in A1[0] = H0[R].L4[0];
+    in A1[1] = H0[R].L1[1];
+    in A1[2] = W0[U].L4[6];
+    in A1[3] = E0[D].L4[2];
 }
 
-switch (32,47) {
-    S.L16[0] = N.L4[0];
-}
-
-switch (48,16) {
-    W.L1[0] = E.L16[0];
-}
-
-switch (48,32) {
-    W.L16[0] = N.L16[0];
-}
-
-switch (48,47) {
-    E.L1[0] = N.L16[0];
-}
-
-logic (26,37) {
+logic (26, 37) {
     CARRY = 1;
     CIN_SRC = 1;
     LUT1 = 0x0F00;
@@ -198,14 +187,14 @@ logic (26,37) {
         REG = 1;
     }
     in B1 = O1A;
+    in CE1 = 1;
     in B2 = O2A;
     in C2 = O1A;
     in D2 = E[U].L1[3];
-    in CE1 = 1;
     in CE2 = 1;
 }
 
-logic (27,37) {
+logic (27, 37) {
     CARRY = 1;
     CIN_SRC = above;
     LUT1 = 0x3600;
@@ -219,54 +208,43 @@ logic (27,37) {
     in B1 = E[D].L1[2];
     in C1 = O1A;
     in D1 = O2A;
-    in B2 = O2A;
     in CE1 = 1;
+    in B2 = O2A;
     in CE2 = 1;
 }
 
-bram (25,38) {
-    WIDTH = 8;
-    in A1[0] = H1[R].L1[1];
-    in A1[1] = H1[R].L1[2];
-    in A1[2] = H1[R].L1[3];
-    in A1[3] = H1[R].L1[5];
-    data {
-        000: 77 24 5D 6D 2E 6B 7B 25;
-        008: 7F 6F 00 00 00 00 00 00;
-    }
-}
-
-io (0,16) {
-    in O = S[L].L1[0];
+io (0, 16) {
+    in O = S[L].L16[1];
     in E = 1;
 }
 
-io (0,32) {
-    in O = S[L].L1[0];
+io (0, 32) {
+    in O = S[L].L4[2];
     in E = 1;
 }
 
-io (0,48) {
-    in O = S[R].L1[0];
+io (0, 48) {
+    in O = S[R].L16[1];
     in E = 1;
 }
 
-io (25,0) {
-    in O = E[D].L1[0];
-    in E = 1;
-}
-
-io (26,65) {
+io (26, 65) {
     in O = W[U].L1[0];
     in E = 1;
 }
 
-io (49,16) {
-    in O = N[L].L1[0];
+io (49, 48) {
+    in O = N[R].L16[1];
     in E = 1;
 }
 
-io (49,48) {
-    in O = N[R].L1[0];
+io (49, 16) {
+    in O = N[L].L16[1];
     in E = 1;
 }
+
+io (25, 0) {
+    in O = E[D].L1[0];
+    in E = 1;
+}
+

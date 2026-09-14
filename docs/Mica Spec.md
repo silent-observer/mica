@@ -1677,14 +1677,17 @@ tied to constant `1` so the output driver is enabled.
 format 1;
 device "M1/S";
 
+switch (0, 1) {
+    E.L1[0] = NE.I;
+}
+
 switch (0, 2) {
     E.L1[0] = SW.O1A;
-    W.L1[0] = NW.I;
 }
 
 logic (1, 2) {
     LUT1 = 0xFF00;
-    in A1 = N[L].L1[0];
+    in A1 = N[R].L1[0];
 }
 
 io (0, 2) {
@@ -1702,19 +1705,25 @@ Two things about this listing are worth dwelling on.
 `in B1 = 0;` and its siblings do **not** appear: constant `0` is code `0`, and zero-valued commands
 are skipped. The tie-off is real, it is simply the default.
 
-`W.L1[0] = NW.I;` also encodes as code `0`, and would normally be skipped for the same reason - but
-`A1` reads that wire, so the exception applies and it is emitted explicitly. In the binary form
-below its nibble really is zero; the textual form carries information the binary does not.
+The pin is read from switchbox `(0,1)` rather than `(0,2)`, although the pad at `(0,2)` touches
+both - it is the north-east corner of one and the north-west corner of the other. Either reaches
+`A1` in a single L1 hop across the same channel, so which one gets used is arbitrary; `A1`'s primary
+side is north and its eighteen north codes run clockwise before counter-clockwise, which makes the
+eastward wire out of `(0,1)` the lower code of the two.
 
-**Binary bitstream.** Indices: switchbox `(0,2)` is `0 + 2*49 = 98`, logic `(1,2)` is
-`0 + 1*48 = 48`, and the north IO tiles of columns 2 and 3 are `48 + 1*2 = 50` and `48 + 2*2 = 52`.
+**Binary bitstream.** Indices: switchboxes `(0,1)` and `(0,2)` are `0 + 1*49 = 49` and
+`0 + 2*49 = 98`, logic `(1,2)` is `0 + 1*48 = 48`, and the north IO tiles of columns 2 and 3 are
+`48 + 1*2 = 50` and `48 + 2*2 = 52`.
 
 | Section | Offset (bits) | Size (bits) | Covers                         |
 |---------|---------------|-------------|--------------------------------|
+| `1`     | `7056`        | `144`       | switchbox `(0,1)`              |
 | `1`     | `14112`       | `144`       | switchbox `(0,2)`              |
 | `2`     | `4944`        | `103`       | logic `(1,2)`                  |
 | `5`     | `1750`        | `35`        | IO index 50, tile `(0,2)`      |
 | `5`     | `1820`        | `35`        | IO index 52, tile `(0,3)`      |
+
+The two switchboxes are 49 indices apart, so they are two frames rather than one.
 
 The two IO tiles are one index apart, and a frame may legally span both - index 51 is the untouched
 south tile of column 2, and a single 105-bit frame covering 50..52 costs 23 bytes against 28 for
@@ -1722,16 +1731,17 @@ two 35-bit frames. Nothing requires that, and the converter here takes the simpl
 frame wherever a tile is zero-filled.
 
 ```
-0000  4d 49 43 41 cd da 80 40 00 00 00 01 4d 31 2f 53
-0010  00 00 00 04 01 00 00 37 20 00 00 00 90 00 00 00
-0020  00 03 00 00 00 00 00 00 00 00 00 00 00 00 00 02
-0030  00 00 13 50 00 00 00 67 01 fe 00 00 00 00 03 c0
-0040  00 00 00 00 00 05 00 00 06 d6 00 00 00 23 10 00
-0050  00 00 00 05 00 00 07 1c 00 00 00 23 00 16 10 00
-0060  00
+0000  4d 49 43 41 c9 6a 1c 32 00 00 00 01 4d 31 2f 53
+0010  00 00 00 05 01 00 00 1b 90 00 00 00 90 00 00 00
+0020  00 01 00 00 00 00 00 00 00 00 00 00 00 00 00 01
+0030  00 00 37 20 00 00 00 90 00 00 00 00 03 00 00 00
+0040  00 00 00 00 00 00 00 00 00 00 02 00 00 13 50 00
+0050  00 00 67 01 fe 00 00 00 00 01 80 00 00 00 00 00
+0060  05 00 00 06 d6 00 00 00 23 10 00 00 00 00 05 00
+0070  00 07 1c 00 00 00 23 00 16 10 00 00
 ```
 
-97 bytes, against a configuration memory of 962720 bits for this device. That ratio is the whole
+124 bytes, against a configuration memory of 962720 bits for this device. That ratio is the whole
 point of the sparse-frame design.
 
 ### Example 2 - registered toggle
@@ -1895,72 +1905,69 @@ tolerate an arbitrary start state would have to decode them explicitly.
 
 #### The address routes
 
-The four count bits drive `A1[0..3]`. All four end on `H1`, the first internal edge of the BRAM,
-because that edge runs along row boundary 26 - right past the two logic tiles - while the primary
-edges of `A1[0..3]` (`H0`, `W0`, `E0`) all sit a row higher, next to cell 0. This is the case the
-connection box section describes: `H1` is the secondary edge for `H0`, `W0` and `E0` alike, and the
-staggered `d` values (`0`, `2` and `4`) are exactly what lets four signals share it.
+The four count bits drive `A1[0..3]`, and each one reaches the BRAM on its own *primary* edge:
+`A1[0]` and `A1[1]` are slots 0 and 2 of `H0`, the north edge of cell 0, while `A1[2]` is slot 0 of
+`W0` and `A1[3]` slot 0 of `E0` - the west and east edges of that same cell. The three edges all run
+past row boundary 24 or column boundary 37/38, within a hop or two of the logic tiles, so nothing
+has to fall back on `H1`. That secondary edge exists for the case where a signal cannot reach the
+primary one, and here none of the four need it.
 
 The route for `LSB.O1A` to `BRAM.A[0]`:
 
 ```
-switch (25, 36) { E.L1[1] = SE.O1A; }    // code 2
-switch (25, 37) { E.L1[1] = W.L1[1]; }   // code 4, straight through
-                                         // bram (25,38) in A1[0] = H1[R].L1[1], code 11
+switch (25, 36) { N.L1[2] = SE.O1A; }    // code 2
+switch (24, 36) { E.L4[0] = S.L1[2]; }   // code 6, right turn onto L4
+                                         // bram (25,38) in A1[0] = H0[R].L4[0], code 3
 ```
 
-Tile `(26,37)` is the south-east neighbour of switchbox `(25,36)`, so `T[2]`; on the east side
-(`s = 1`) code `2` selects `T[2].O[(1+1+2) mod 4] = T[2].O[0] = O1A`. One straight L1 hop carries it
-past switchbox `(25,37)` onto `H1`, heading east. `A1[0]` is slot 0 of edge `H0`, so it is even
-parity with secondary edge `H1`, `d = 0` and secondary direction east; the secondary window is
-`W(n=5,d=0)` over odd parity - `L1[1], L4[1], L16[1], L1[3], L4[3]` for codes `11..15` - and
-`L1[1]` is the first of them. **450 ps.**
+Tile `(26,37)` is the south-east neighbour of switchbox `(25,36)`, so `T[2]`; on the north side
+(`s = 0`) code `2` selects `T[2].O[(2+0+2) mod 4] = T[2].O[0] = O1A`. One L1 hop north, then a right
+turn onto the second L4 heading east, which crosses `H0` on its way past column 38. **500 ps.**
 
 The route for `LSB.O2A` to `BRAM.A[1]`:
 
 ```
-switch (25, 37) { E.L1[2] = SW.O2A; }    // code 3
-                                         // bram (25,38) in A1[1] = H1[R].L1[2], code 14
+switch (25, 37) { N.L1[3] = SW.O2A; }    // code 3
+switch (24, 37) { E.L1[1] = S.L1[3]; }   // code 6, right turn
+                                         // bram (25,38) in A1[1] = H0[R].L1[1], code 2
 ```
 
-The shortest of the four: tile `(26,37)` is `T[3]` of switchbox `(25,37)`, and code `3` on the east
-side selects `T[3].O[(2+1+3) mod 4] = T[3].O[2] = O2A`, which already lands on `H1`. `A1[1]` is slot
-2 of `H0`, odd parity, so its secondary window is taken over *even* parity: `L1[0], L4[0], L16[0],
-L1[2], L4[2]`, and `L1[2]` is code `14`. **300 ps.**
+The mirror of the first, one column east: `(26,37)` is `T[3]` of switchbox `(25,37)` and code `3`
+on the north side selects `T[3].O[(3+0+3) mod 4] = T[3].O[2] = O2A`. **450 ps.**
 
 The route for `MSB.O1A` to `BRAM.A[2]`:
 
 ```
-switch (26, 37) { N.L1[5] = SW.O1A; }    // code 3
-switch (25, 37) { E.L1[3] = S.L1[5]; }   // code 6, right turn
-                                         // bram (25,38) in A1[2] = H1[R].L1[3], code 12
+switch (27, 37) { N.L4[0] = NW.O1A; }    // code 0
+                                         // bram (25,38) in A1[2] = W0[U].L4[6], code 10
 ```
 
-Tile `(27,37)` is `T[3]` of switchbox `(26,37)`; on the north side code `3` selects
-`T[3].O[(5+0+3) mod 4] = T[3].O[0] = O1A`. The wire runs north to switchbox `(25,37)`, where it
-turns east. That turn is the `L1[rgt][(i+2) mod 6]` entry: the outgoing track is `3`, `rgt` is the
-south side, and `(3+2) mod 6 = 5`, which is the arriving track. `A1[2]` is slot 0 of `W0`, even
-parity, secondary `H1` with `d = 2`, so its window is `L16[1], L1[3], L4[3], L4[5], L1[5]` and
-`L1[3]` is code `12`. **450 ps.**
+The shortest of the four, and a single hop: `(27,37)` is its own switchbox's north-west neighbour
+`T[0]`, and on the north side code `0` selects `T[0].O[(0+0+0) mod 4] = O1A`. The L4 launched north
+from switchbox row 27 spans rows 27 down to 23, so it crosses `W0` - the vertical channel on column
+boundary 37 beside cell 0 - on the way. Being code `0` it would normally be skipped in the textual
+form, and appears only because the connection box reads it. **350 ps.**
 
 The route for `MSB.O2A` to `BRAM.A[3]`:
 
 ```
-switch (27, 36) { N.L1[1] = NE.O2A; }    // code 1
-switch (26, 36) { N.L1[1] = S.L1[1]; }   // code 4, straight through
-switch (25, 36) { E.L1[5] = S.L1[1]; }   // code 6, right turn
-switch (25, 37) { E.L1[5] = W.L1[5]; }   // code 4, straight through
-                                         // bram (25,38) in A1[3] = H1[R].L1[5], code 13
+switch (26, 37) { N.L1[3] = SW.O2A; }    // code 3, shared with the q3 feedback hop
+switch (25, 37) { N.L4[1] = S.L1[3]; }   // code 4, straight through onto L4
+switch (21, 37) { E.L1[2] = S.L4[1]; }   // code 12, right turn
+switch (21, 38) { S.L4[0] = W.L1[2]; }   // code 6, left turn
+                                         // bram (25,38) in A1[3] = E0[D].L4[2], code 6
 ```
 
-The longest, because `A1[3]` belongs to `E0` - the far side of the BRAM - and so takes the one
-remaining odd-parity L1 slot in `H1`'s `d = 4` window (`L4[3], L4[5], L1[5], L16[3], L4[7]`,
-code `13`). The signal is launched from the *west* corner box `(27,36)`, where `(27,37)` is the
-north-east neighbour `T[1]` and `(1+0+1) mod 4 = 2` selects `O2A`, then travels two boxes north
-before turning east. **750 ps**, and the slowest of the four.
+The longest, at four hops, and the one place the fan-out of `q3` pays off: its first hop is the very
+segment that carries `q3` up into `(26,37).D2`, so the two sinks share a driver and the switchbox at
+`(26,37)` is configured once. From there the signal continues north to switchbox row 21, crosses to
+column 38 and comes back down an L4 that spans rows 21 to 25, meeting `E0` - the vertical channel
+east of cell 0 - at the bottom. The detour north is what it costs to approach `E0` from *above*:
+`A1[3]` reads `E0` in the down direction, and no segment running down past row 25 starts any closer.
+**850 ps**, and the slowest of the four.
 
-Together these four routes drive `E.L1[1]`, `E.L1[2]`, `E.L1[3]` and `E.L1[5]` of switchbox
-`(25,37)` - four distinct tracks on one edge, one source each.
+Together these four routes touch four distinct tracks, one source each, and only the `A1[3]` route
+shares a segment with anything else.
 
 #### The lookup table
 
@@ -2022,12 +2029,16 @@ The other six are built the same way and are listed in full in the bitstream bel
 | Segment | Pin | IO tile   | Source  | Hops | Sink code | Delay   |
 |---------|-----|-----------|---------|-----:|-----------|--------:|
 | `A`     | 200 | `(25,0)`  | `DO[0]` |    5 | `2`       | 1500 ps |
-| `B`     | 161 | `(49,16)` | `DO[1]` |    7 | `5`       | 1900 ps |
-| `C`     |  16 | `(0,16)`  | `DO[2]` |    7 | `2`       | 1900 ps |
-| `D`     |  32 | `(0,32)`  | `DO[3]` |    6 | `2`       | 1500 ps |
-| `E`     | 129 | `(49,48)` | `DO[4]` |    8 | `2`       | 1800 ps |
-| `F`     |  48 | `(0,48)`  | `DO[5]` |    8 | `5`       | 1850 ps |
+| `B`     | 161 | `(49,16)` | `DO[1]` |    6 | `28`      | 1950 ps |
+| `C`     |  16 | `(0,16)`  | `DO[2]` |    6 | `22`      | 1950 ps |
+| `D`     |  32 | `(0,32)`  | `DO[3]` |    5 | `6`       | 1400 ps |
+| `E`     | 129 | `(49,48)` | `DO[4]` |    6 | `22`      | 1650 ps |
+| `F`     |  48 | `(0,48)`  | `DO[5]` |    6 | `28`      | 1700 ps |
 | `G`     |  90 | `(26,65)` | `DO[6]` |    6 | `2`       | 1450 ps |
+
+`B`, `C`, `E` and `F` all end on an L16 read directly by the connection box, which is why their
+sink codes are the high ones: an L16 in the secondary window costs more code space than the L1 that
+`A` and `G` finish on.
 
 #### Timing
 
@@ -2054,11 +2065,11 @@ rather than a constraint. Its worst case is the `A1[3]` address route followed b
 segment:
 
 ```
-200 (clock to output) + 750 (q3 -> A1[3]) + 1500 (BRAM address to output)
-  + 1900 (DO[1] -> segment B) + 800 (O to PIN) = 5150 ps
+200 (clock to output) + 850 (q3 -> A1[3]) + 1500 (BRAM address to output)
+  + 1950 (DO[1] -> segment B) + 800 (O to PIN) = 5300 ps
 ```
 
-which is about 4.4 clock periods at fmax.
+which is about 4.6 clock periods at fmax.
 
 #### Textual bitstream
 
@@ -2070,47 +2081,57 @@ global {
     CLK_PIN_ENABLE[0] = 1;
 }
 
-switch (0, 16) {
-    W.L1[0] = E.L16[0];
+switch (0, 20) {
+    W.L16[0] = S.L4[0];
 }
 
-switch (0, 32) {
-    W.L1[0] = E.L4[0];
-    W.L16[0] = S.L16[0];
+switch (0, 33) {
+    W.L4[0] = E.L4[0];
 }
 
 switch (0, 36) {
-    W.L4[0] = S.L16[0];
+    E.L16[0] = S.L4[0];
 }
 
-switch (0, 47) {
-    E.L1[0] = S.L16[0];
-}
-
-switch (16, 32) {
-    N.L16[0] = E.L4[0];
-}
-
-switch (16, 36) {
-    N.L16[0] = S.L4[1];
+switch (0, 37) {
     W.L4[0] = S.L4[0];
 }
 
-switch (16, 43) {
-    E.L4[0] = S.L4[0];
-}
-
-switch (16, 47) {
-    N.L16[0] = W.L4[0];
-}
-
-switch (20, 36) {
-    N.L4[0] = S.L4[1];
-    N.L4[1] = S.L4[0];
-}
-
-switch (20, 43) {
+switch (4, 20) {
     N.L4[0] = S.L4[0];
+}
+
+switch (4, 36) {
+    N.L4[0] = S.L4[0];
+}
+
+switch (4, 37) {
+    N.L4[0] = S.L16[0];
+}
+
+switch (8, 20) {
+    N.L4[0] = E.L16[0];
+}
+
+switch (8, 36) {
+    N.L4[0] = S.L16[0];
+    W.L16[0] = E.L1[4];
+}
+
+switch (8, 37) {
+    W.L1[4] = S.L16[0];
+}
+
+switch (20, 37) {
+    N.L16[0] = S.L4[1];
+}
+
+switch (21, 37) {
+    E.L1[2] = S.L4[1];
+}
+
+switch (21, 38) {
+    S.L4[0] = W.L1[2];
 }
 
 switch (24, 0) {
@@ -2121,134 +2142,113 @@ switch (24, 16) {
     W.L16[0] = E.L16[0];
 }
 
+switch (24, 20) {
+    S.L16[0] = E.L16[0];
+}
+
 switch (24, 32) {
-    S.L4[0] = E.L4[0];
     W.L16[0] = E.L4[1];
 }
 
 switch (24, 36) {
-    N.L4[0] = E.L1[2];
-    N.L4[1] = E.L1[5];
-    W.L4[0] = E.L1[0];
+    N.L16[0] = S.L1[4];
+    E.L4[0] = S.L1[2];
     W.L4[1] = E.L1[3];
+    W.L16[0] = E.L1[4];
 }
 
 switch (24, 37) {
-    W.L1[0] = SE.DO[1];
-    W.L1[2] = SE.DO[3];
+    N.L4[1] = SE.DO[3];
+    N.L16[0] = SE.DO[2];
+    E.L1[1] = S.L1[3];
     W.L1[3] = SE.DO[0];
-    W.L1[5] = SE.DO[2];
-}
-
-switch (24, 38) {
-    E.L1[0] = S.L1[2];
-}
-
-switch (24, 39) {
-    E.L4[0] = W.L1[0];
-}
-
-switch (24, 43) {
-    N.L4[0] = W.L4[0];
+    W.L1[4] = SE.DO[1];
 }
 
 switch (25, 36) {
-    E.L1[1] = SE.O1A;
-    E.L1[5] = S.L1[1];
+    N.L1[2] = SE.O1A;
+    N.L1[4] = E.L1[0];
 }
 
 switch (25, 37) {
-    E.L1[1] = W.L1[1];
-    E.L1[2] = SW.O2A;
-    E.L1[3] = S.L1[5];
-    E.L1[5] = W.L1[5];
-}
-
-switch (25, 38) {
-    N.L1[2] = SW.DO[5];
-}
-
-switch (26, 36) {
-    N.L1[1] = S.L1[1];
+    N.L1[3] = SW.O2A;
+    N.L4[1] = S.L1[3];
+    W.L1[0] = SE.DO[5];
 }
 
 switch (26, 37) {
     N.L1[3] = SW.O2A;
-    N.L1[5] = SW.O1A;
+    S.L1[1] = NE.DO[4];
     S.L1[2] = NW.O1A;
 }
 
 switch (26, 38) {
-    E.L1[3] = NW.DO[4];
     E.L4[1] = NW.DO[6];
 }
 
-switch (26, 39) {
-    S.L1[1] = W.L1[3];
-}
-
 switch (26, 42) {
-    E.L1[0] = W.L4[1];
+    E.L1[4] = W.L4[1];
 }
 
 switch (26, 43) {
-    E.L1[0] = W.L1[0];
+    E.L1[4] = W.L1[4];
 }
 
 switch (26, 44) {
-    E.L4[0] = W.L1[0];
+    E.L16[0] = W.L1[4];
 }
 
-switch (26, 48) {
-    E.L16[0] = W.L4[0];
+switch (26, 60) {
+    E.L4[0] = W.L16[0];
 }
 
 switch (26, 64) {
-    N.L1[0] = W.L16[0];
+    N.L1[0] = W.L4[0];
 }
 
 switch (27, 36) {
-    N.L1[1] = NE.O2A;
+    S.L1[4] = E.L1[5];
 }
 
-switch (27, 39) {
-    S.L1[1] = N.L1[1];
+switch (27, 37) {
+    N.L4[0] = NW.O1A;
+    W.L1[5] = N.L1[1];
 }
 
-switch (28, 32) {
+switch (28, 36) {
+    S.L16[0] = N.L1[4];
+}
+
+switch (40, 20) {
+    S.L4[0] = N.L16[0];
+}
+
+switch (44, 20) {
     S.L4[0] = N.L4[0];
 }
 
-switch (28, 39) {
-    E.L4[0] = N.L1[1];
+switch (44, 36) {
+    S.L4[0] = N.L16[0];
 }
 
-switch (28, 43) {
-    E.L4[0] = W.L4[0];
+switch (48, 20) {
+    W.L16[0] = N.L4[0];
 }
 
-switch (28, 47) {
-    S.L4[0] = W.L4[0];
+switch (48, 36) {
+    E.L16[0] = N.L4[0];
 }
 
-switch (32, 32) {
-    S.L16[0] = N.L4[0];
-}
-
-switch (32, 47) {
-    S.L16[0] = N.L4[0];
-}
-
-switch (48, 16) {
-    W.L1[0] = E.L16[0];
-}
-
-switch (48, 32) {
-    W.L16[0] = N.L16[0];
-}
-
-switch (48, 47) {
-    E.L1[0] = N.L16[0];
+bram (25, 38) {
+    WIDTH = 8;
+    data {
+        000: 77 24 5D 6D 2E 6B 7B 25;
+        008: 7F 6F 00 00 00 00 00 00;
+    }
+    in A1[0] = H0[R].L4[0];
+    in A1[1] = H0[R].L1[1];
+    in A1[2] = W0[U].L4[6];
+    in A1[3] = E0[D].L4[2];
 }
 
 logic (26, 37) {
@@ -2263,10 +2263,10 @@ logic (26, 37) {
         REG = 1;
     }
     in B1 = O1A;
+    in CE1 = 1;
     in B2 = O2A;
     in C2 = O1A;
     in D2 = E[U].L1[3];
-    in CE1 = 1;
     in CE2 = 1;
 }
 
@@ -2284,40 +2284,23 @@ logic (27, 37) {
     in B1 = E[D].L1[2];
     in C1 = O1A;
     in D1 = O2A;
-    in B2 = O2A;
     in CE1 = 1;
+    in B2 = O2A;
     in CE2 = 1;
 }
 
-bram (25, 38) {
-    WIDTH = 8;
-    in A1[0] = H1[R].L1[1];
-    in A1[1] = H1[R].L1[2];
-    in A1[2] = H1[R].L1[3];
-    in A1[3] = H1[R].L1[5];
-    data {
-        000: 77 24 5D 6D 2E 6B 7B 25;
-        008: 7F 6F 00 00 00 00 00 00;
-    }
-}
-
 io (0, 16) {
-    in O = S[L].L1[0];
+    in O = S[L].L16[1];
     in E = 1;
 }
 
 io (0, 32) {
-    in O = S[L].L1[0];
+    in O = S[L].L4[2];
     in E = 1;
 }
 
 io (0, 48) {
-    in O = S[R].L1[0];
-    in E = 1;
-}
-
-io (25, 0) {
-    in O = E[D].L1[0];
+    in O = S[R].L16[1];
     in E = 1;
 }
 
@@ -2326,23 +2309,29 @@ io (26, 65) {
     in E = 1;
 }
 
-io (49, 16) {
-    in O = N[L].L1[0];
+io (49, 48) {
+    in O = N[R].L16[1];
     in E = 1;
 }
 
-io (49, 48) {
-    in O = N[R].L1[0];
+io (49, 16) {
+    in O = N[L].L16[1];
+    in E = 1;
+}
+
+io (25, 0) {
+    in O = E[D].L1[0];
     in E = 1;
 }
 ```
 
 Three details in this listing are worth pointing out.
 
-`switch (26, 37) { S.L1[2] = NW.O1A; }`, `switch (26,38) { E.L1[3] = NW.DO[4]; }` and
-`switch (26, 38) { E.L4[1] = NW.DO[6]; }` all encode as code `0`, which would normally be skipped -
+`switch (26, 37) { S.L1[2] = NW.O1A; }`, `switch (26, 38) { E.L4[1] = NW.DO[6]; }` and
+`switch (27, 37) { N.L4[0] = NW.O1A; }` all encode as code `0`, which would normally be skipped -
 but each is read by a downstream sink, so the exception in "Textual format" applies and they are
-emitted explicitly.
+emitted explicitly. They are exactly the three sources that land on the north-west corner of their
+switchbox, `T[0]` being both the first tile source and the disabled-wire encoding.
 
 `CLK = CLK0` never appears: `CLK0` is code `0` on every tile that has a clock selection, including
 the BRAM. Neither do `FRAC1` and `FRAC2`, since carry mode fractures both LUTs regardless.

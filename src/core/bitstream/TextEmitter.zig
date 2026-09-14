@@ -122,7 +122,10 @@ fn collectSwitchSinkRead(
     };
 
     // Switchbox sources are already in local numbering, so only the driving
-    // box has to be found.
+    // box has to be found. The segment runs *into* `sw` across `wire.side`, so
+    // its direction comes from the source side, not from the sink's: the two
+    // agree only for a straight-through connection, and differ by a quarter
+    // turn for the left and right entries.
     const start = routing.incomingStart(
         sw,
         wire.side,
@@ -131,7 +134,7 @@ fn collectSwitchSinkRead(
     ) orelse return;
     e.markRead(.{
         .start = start,
-        .dir = side.outDir(),
+        .dir = wire.side.inDir(),
         .class = wire.class,
         .track = wire.track,
     });

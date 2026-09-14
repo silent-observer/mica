@@ -163,12 +163,15 @@ test "golden: the inverter example, both directions" {
     const r = try parseText(inverter_text);
     defer r.deinit(alloc);
 
-    // Indices: switchbox (0,2) is 0 + 2*49 = 98, logic (1,2) is 0 + 1*48 = 48,
-    // and the north IO tiles of columns 2 and 3 are 48 + 1*2 = 50 and
-    // 48 + 2*2 = 52, so the frames land at 14112, 4944, 1750 and 1820 bits.
+    // Indices: switchboxes (0,1) and (0,2) are 0 + 1*49 = 49 and 0 + 2*49 = 98,
+    // logic (1,2) is 0 + 1*48 = 48, and the north IO tiles of columns 2 and 3
+    // are 48 + 1*2 = 50 and 48 + 2*2 = 52, so the frames land at 7056, 14112,
+    // 4944, 1750 and 1820 bits. The two switchboxes are far enough apart in
+    // index to stay separate frames rather than merging into one.
     const bin = BinaryEmitter.emit(&r.c.?, alloc);
     defer alloc.free(bin);
     try checkBitstream(&r.c.?.model, bin, &.{
+        .{ .section = 1, .offset = 49 * 144, .size = 144 },
         .{ .section = 1, .offset = 98 * 144, .size = 144 },
         .{ .section = 2, .offset = 48 * 103, .size = 103 },
         .{ .section = 5, .offset = 50 * 35, .size = 35 },
@@ -185,15 +188,23 @@ test "golden: the inverter example, both directions" {
     try std.testing.expectEqualStrings(inverter_text, t.text);
 
     // Per "Textual format": zero-valued commands are skipped, except that a wire
-    // something else reads is named anyway. W.L1[0] = NW.I is code 0 and
-    // appears only because logic (1,2) reads that segment on A1 - drop the
-    // reader and the line goes with it.
+    // something else reads is named anyway. The example's own route no longer
+    // has a code-0 source to show that with - `NE.I` is the north-east corner,
+    // code 1 - so the case is built here instead: park the segment logic (1,2)
+    // reads on A1 at code 0 and it still has to be named, because dropping the
+    // reader is what makes the line go away.
     var c = back.c.?;
+    c.getSwitch(.{ .row = 0, .col = 1 }).sides.getPtr(.e).l1[0] = 0;
+    const parked = try emitText(&c);
+    defer parked.deinit(alloc);
+    // Code 0 is T[0], the north-west corner, which at switchbox (0,1) is the
+    // IO tile (0,1) - so the line names it rather than vanishing.
+    try std.testing.expect(std.mem.containsAtLeast(u8, parked.text, 1, "E.L1[0] = NW.I;"));
+
     c.getLogic(.{ .row = 1, .col = 2 }).inputs.set(.a1, 0);
     const without = try emitText(&c);
     defer without.deinit(alloc);
-    try std.testing.expect(std.mem.containsAtLeast(u8, t.text, 1, "W.L1[0] = NW.I;"));
-    try std.testing.expect(!std.mem.containsAtLeast(u8, without.text, 1, "W.L1[0]"));
+    try std.testing.expect(!std.mem.containsAtLeast(u8, without.text, 1, "E.L1[0] = NW.I;"));
     try std.testing.expect(std.mem.containsAtLeast(u8, without.text, 1, "E.L1[0] = SW.O1A;"));
 }
 

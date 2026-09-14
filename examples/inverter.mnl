@@ -38,8 +38,8 @@ cell pad_y : IO {
 
 net a {
     route {
-        switch (0, 2): W.L1[0] = NW.I;
-        logic (1, 2): in A1 = N[L].L1[0];
+        switch (0, 1): E.L1[0] = NE.I;
+        logic (1, 2): in A1 = N[R].L1[0];
     }
 }
 
