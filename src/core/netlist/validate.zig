@@ -28,7 +28,8 @@ pub fn validate(nl: *const Netlist, alloc: std.mem.Allocator) Result {
     for (nl.cells.items) |*cell| {
         const lookup = Netlist.ports.buildLookupTableCell(cell) catch
             @panic("Got netlist without widths somehow");
-        for (0..cell.ports_len) |port| {
+        for (0..cell.ports_len) |port_index| {
+            const port: u32 = @intCast(port_index);
             const ref = nl.getCellPort(cell, port).*;
             if (ref.isReal() and !lookup.isInput(port)) {
                 sources[ref.int()] += 1;
@@ -37,9 +38,14 @@ pub fn validate(nl: *const Netlist, alloc: std.mem.Allocator) Result {
     }
 
     for (nl.nets.items, sources) |*net, source_count| {
+        // A net with a `PIN` of its own is bound straight to a pad rather than
+        // reaching the die through an `IO` cell - that is how the global clock
+        // and reset networks are spelled - so there is no cell output to count.
+        if (net.pin != null) continue;
+
         if (source_count == 0)
             err(&r, "Net {f} has no sources!", .{net.fmt(nl)})
-        else if (source_count >= 1)
+        else if (source_count > 1)
             err(&r, "Net {f} has {} sources!", .{ net.fmt(nl), source_count });
     }
     return r;
