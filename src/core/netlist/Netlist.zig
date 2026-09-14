@@ -19,6 +19,8 @@ pub const ports = @import("ports.zig");
 
 pub const Netlist = @This();
 
+pub const validate = @import("validate.zig").validate;
+
 gpa: std.mem.Allocator,
 arena: std.heap.ArenaAllocator,
 model: DeviceModel,
